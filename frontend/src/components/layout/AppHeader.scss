@@ -1,0 +1,124 @@
+@use '@/styles/variables.scss' as *;
+
+.app-header {
+  height: $header-height;
+  background: $bg-secondary;
+  border-bottom: 1px solid $border-subtle;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    background: $accent-primary;
+    color: #fff;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  .logo-text {
+    font-family: $font-display;
+    font-size: 18px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+}
+
+.nav-links {
+  display: flex;
+  gap: 4px;
+}
+
+.nav-link {
+  padding: 6px 12px;
+  border-radius: $radius-sm;
+  font-size: 14px;
+  color: $text-secondary;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    color: $text-primary;
+    background: rgba(20, 20, 19, 0.04);
+  }
+
+  &.active {
+    color: $accent-primary;
+    background: rgba(217, 119, 87, 0.08);
+    font-weight: 500;
+  }
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: $radius-sm;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba(20, 20, 19, 0.04);
+  }
+
+  .anticon {
+    font-size: 16px;
+    color: $text-secondary;
+  }
+
+  .user-name {
+    font-size: 14px;
+    color: $text-primary;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 16px;
+  }
+
+  .header-left {
+    gap: 16px;
+  }
+
+  .logo-text {
+    display: none;
+  }
+
+  .nav-links {
+    display: none;
+  }
+
+  .user-name {
+    display: none;
+  }
+}

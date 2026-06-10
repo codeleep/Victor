@@ -1,0 +1,21 @@
+# 本地敏感配置 - 此文件不会被Git追踪
+# 复制此文件为 application-local.yml 并填入真实值
+
+# 数据库配置（如果与默认不同）
+# spring:
+#   datasource:
+#     password: your-real-password
+
+# JWT配置
+jwt:
+  secret: your-real-jwt-secret-key
+
+# Embedding API配置
+embedding:
+  api-key: sk-your-real-openai-api-key
+
+# 其他API密钥
+# openai:
+#   api-key: sk-xxx
+# anthropic:
+#   api-key: sk-ant-xxx

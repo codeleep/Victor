@@ -1,0 +1,25 @@
+﻿# IDE
+.idea/
+*.iml
+.vscode/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Backend
+backend/target/
+*.class
+
+# Environment
+.env
+.env.local
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+victor-pgdata/

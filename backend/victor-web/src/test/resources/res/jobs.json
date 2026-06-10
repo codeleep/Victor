@@ -1,0 +1,47 @@
+[
+  {
+    "name": "Java高级开发工程师",
+    "description": "负责公司核心业务系统的架构设计与开发，参与技术选型和方案评审，指导初中级开发人员。",
+    "requiredSkills": ["Java", "Spring Boot", "MySQL", "Redis", "微服务", "Docker"],
+    "experienceYears": 5,
+    "education": "本科",
+    "salaryRange": "25K-40K",
+    "domains": ["后端开发", "电商", "金融"]
+  },
+  {
+    "name": "前端开发工程师",
+    "description": "负责公司Web端和移动端前端开发，与设计师和后端工程师协作，优化页面性能和用户体验。",
+    "requiredSkills": ["Vue", "TypeScript", "Webpack", "CSS", "Node.js"],
+    "experienceYears": 3,
+    "education": "本科",
+    "salaryRange": "18K-30K",
+    "domains": ["前端开发", "移动端"]
+  },
+  {
+    "name": "Python数据分析师",
+    "description": "负责数据采集、清洗、分析和可视化，构建数据报表和仪表盘，为业务决策提供数据支持。",
+    "requiredSkills": ["Python", "Pandas", "SQL", "Tableau", "数据建模"],
+    "experienceYears": 2,
+    "education": "本科",
+    "salaryRange": "15K-25K",
+    "domains": ["数据分析", "商业智能"]
+  },
+  {
+    "name": "DevOps运维工程师",
+    "description": "负责CI/CD流水线搭建，容器化部署，监控告警体系建设，保障线上服务稳定性。",
+    "requiredSkills": ["Docker", "Kubernetes", "Jenkins", "Linux", "Prometheus", "Terraform"],
+    "experienceYears": 3,
+    "education": "本科",
+    "salaryRange": "20K-35K",
+    "domains": ["运维", "云原生", "SRE"]
+  },
+  {
+    "name": "AI算法工程师",
+    "description": "负责NLP/CV方向的算法研发，模型训练与优化，推动AI能力在业务场景中的落地应用。",
+    "requiredSkills": ["Python", "PyTorch", "TensorFlow", "NLP", "大模型", "RAG"],
+    "experienceYears": 3,
+    "education": "硕士",
+    "salaryRange": "30K-50K",
+    "domains": ["人工智能", "NLP", "大模型"]
+  }
+]

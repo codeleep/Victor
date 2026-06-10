@@ -1,0 +1,122 @@
+[
+  {
+    "title": "Java中==和equals()的区别是什么？",
+    "description": "请详细说明==运算符和equals()方法在比较对象时的区别，并举例说明。",
+    "type": "TECHNICAL",
+    "difficulty": "EASY",
+    "tags": ["Java基础", "面向对象"],
+    "referenceAnswer": "==比较的是引用（内存地址），equals()比较的是对象内容。对于基本类型，==比较值；对于引用类型，==比较是否指向同一个对象。String类重写了equals()方法，比较字符串内容。未重写equals()的类默认使用Object的equals()，等同于==。"
+  },
+  {
+    "title": "HashMap的底层实现原理是什么？",
+    "description": "请解释HashMap的数据结构、put操作流程、扩容机制以及JDK1.8的优化。",
+    "type": "TECHNICAL",
+    "difficulty": "MEDIUM",
+    "tags": ["Java集合", "数据结构"],
+    "referenceAnswer": "HashMap底层采用数组+链表+红黑树（JDK1.8）。put时先计算key的hash，定位到数组下标，若该位置为空直接插入，若不为空则遍历链表/红黑树。JDK1.8当链表长度超过8时转为红黑树，提高查询效率。默认初始容量16，负载因子0.75，扩容时容量翻倍，重新hash分布。"
+  },
+  {
+    "title": "Java中的线程池有哪些核心参数？",
+    "description": "请说明ThreadPoolExecutor的7个核心参数及其作用。",
+    "type": "TECHNICAL",
+    "difficulty": "MEDIUM",
+    "tags": ["Java并发", "线程池"],
+    "referenceAnswer": "ThreadPoolExecutor的7个核心参数：1)corePoolSize核心线程数；2)maximumPoolSize最大线程数；3)keepAliveTime空闲线程存活时间；4)unit时间单位；5)workQueue任务队列；6)threadFactory线程工厂；7)handler拒绝策略。拒绝策略有4种：AbortPolicy抛异常、CallerRunsPolicy调用者执行、DiscardPolicy丢弃、DiscardOldestPolicy丢弃最旧。"
+  },
+  {
+    "title": "JVM的垃圾回收机制是怎样的？",
+    "description": "请说明JVM如何判断对象是否可回收，以及常见的垃圾回收算法。",
+    "type": "TECHNICAL",
+    "difficulty": "HARD",
+    "tags": ["JVM", "垃圾回收"],
+    "referenceAnswer": "判断对象可回收：1)引用计数法（有循环引用问题）；2)可达性分析（GC Roots）。垃圾回收算法：1)标记-清除（产生碎片）；2)标记-整理（无碎片但效率低）；3)复制算法（新生代使用，Eden+Survivor）。分代收集：新生代用复制算法，老年代用标记-清除或标记-整理。常见收集器：Serial、Parallel、CMS、G1、ZGC。"
+  },
+  {
+    "title": "synchronized和ReentrantLock有什么区别？",
+    "description": "请对比synchronized关键字和ReentrantLock的区别及使用场景。",
+    "type": "TECHNICAL",
+    "difficulty": "MEDIUM",
+    "tags": ["Java并发", "锁机制"],
+    "referenceAnswer": "区别：1)synchronized是JVM层面的关键字，ReentrantLock是API层面的类；2)ReentrantLock可以实现公平锁，synchronized只能非公平；3)ReentrantLock可以响应中断、支持超时、支持多条件变量；4)synchronized自动释放锁，ReentrantLock需手动unlock；5)ReentrantLock可以实现读写锁分离。JDK1.6后synchronized做了大量优化（偏向锁、轻量级锁），性能差距不大。"
+  },
+  {
+    "title": "什么是Java的反射机制？",
+    "description": "请解释Java反射的概念、获取Class对象的方式以及应用场景。",
+    "type": "TECHNICAL",
+    "difficulty": "MEDIUM",
+    "tags": ["Java基础", "反射"],
+    "referenceAnswer": "反射是在运行时动态获取类信息和操作类成员的机制。获取Class对象的三种方式：1)Class.forName(\"全限定名\")；2)对象.getClass()；3)类名.class。可以获取构造器、方法、字段等信息，可以动态创建对象、调用方法、修改字段值。应用场景：Spring IOC容器、动态代理、ORM框架、序列化等。缺点是性能较低、破坏封装性。"
+  },
+  {
+    "title": "Java中的泛型擦除是什么意思？",
+    "description": "请解释Java泛型擦除的概念及其带来的限制。",
+    "type": "TECHNICAL",
+    "difficulty": "HARD",
+    "tags": ["Java基础", "泛型"],
+    "referenceAnswer": "Java泛型是通过类型擦除实现的，编译后泛型信息会被擦除，替换为上界（默认Object）。限制：1)不能创建泛型数组；2)不能使用基本类型作为泛型参数；3)不能instanceof泛型类型；4)不能创建泛型类的实例（new T()）；5)静态方法和静态字段不能引用类型参数。通配符：? extends T（上界通配符，只读）、? super T（下界通配符，只写）。"
+  },
+  {
+    "title": "Spring的IOC和DI是什么？",
+    "description": "请解释Spring中控制反转(IOC)和依赖注入(DI)的概念及实现方式。",
+    "type": "TECHNICAL",
+    "difficulty": "EASY",
+    "tags": ["Spring", "框架"],
+    "referenceAnswer": "IOC（控制反转）是一种设计思想，将对象的创建和管理权交给Spring容器，而不是程序员手动new。DI（依赖注入）是IOC的具体实现方式，由容器在运行时自动注入依赖对象。注入方式：1)构造器注入（推荐）；2)setter注入；3)字段注入（@Autowired）。Spring通过BeanFactory/ApplicationContext容器管理Bean的生命周期。"
+  },
+  {
+    "title": "MySQL索引的底层数据结构是什么？",
+    "description": "请说明MySQL InnoDB引擎使用的索引数据结构及其优势。",
+    "type": "TECHNICAL",
+    "difficulty": "MEDIUM",
+    "tags": ["数据库", "MySQL"],
+    "referenceAnswer": "InnoDB使用B+树作为索引的底层数据结构。B+树特点：1)非叶子节点只存key，叶子节点存key和data；2)叶子节点用双向链表连接，支持范围查询；3)树高度一般3-4层，IO次数少。聚簇索引（主键索引）叶子节点存完整数据行；非聚簇索引（二级索引）叶子节点存主键值，需要回表查询。覆盖索引可以避免回表。"
+  },
+  {
+    "title": "Redis的持久化机制有哪些？",
+    "description": "请说明Redis的RDB和AOF两种持久化方式的区别和优缺点。",
+    "type": "TECHNICAL",
+    "difficulty": "MEDIUM",
+    "tags": ["Redis", "缓存"],
+    "referenceAnswer": "RDB：定时生成内存快照，fork子进程执行，文件紧凑适合备份，但可能丢失最后一次快照后的数据。AOF：记录每个写命令，追加到日志文件，数据更安全但文件较大。AOF重写可以压缩文件。Redis4.0后支持混合持久化（RDB+AOF）。生产环境建议同时开启两种方式，AOF用于数据恢复，RDB用于冷备。"
+  },
+  {
+    "title": "请描述一次HTTP请求从浏览器到服务器的完整过程。",
+    "description": "请详细描述从输入URL到页面渲染完成的整个流程。",
+    "type": "TECHNICAL",
+    "difficulty": "MEDIUM",
+    "tags": ["网络", "HTTP"],
+    "referenceAnswer": "1)DNS解析：域名转IP地址；2)TCP连接：三次握手建立连接；3)TLS握手（HTTPS）；4)发送HTTP请求；5)服务器处理请求并返回响应；6)浏览器解析HTML构建DOM树；7)解析CSS构建CSSOM树；8)合并为渲染树；9)布局计算；10)绘制页面。涉及的知识点：DNS缓存、TCP滑动窗口、HTTP缓存机制、浏览器渲染优化。"
+  },
+  {
+    "title": "什么是死锁？如何避免死锁？",
+    "description": "请解释死锁产生的条件以及预防和检测死锁的方法。",
+    "type": "TECHNICAL",
+    "difficulty": "MEDIUM",
+    "tags": ["Java并发", "操作系统"],
+    "referenceAnswer": "死锁是两个或多个线程互相等待对方持有的资源，导致都无法继续执行。产生条件（缺一不可）：1)互斥条件；2)请求与保持条件；3)不可剥夺条件；4)循环等待条件。避免方法：1)按固定顺序获取锁；2)设置超时时间（tryLock）；3)避免嵌套锁；4)使用并发工具类（ConcurrentHashMap代替Hashtable）；5)死锁检测（jstack、jconsole）。"
+  },
+  {
+    "title": "Spring Boot的自动配置原理是什么？",
+    "description": "请解释@SpringBootApplication注解和自动配置的实现机制。",
+    "type": "TECHNICAL",
+    "difficulty": "HARD",
+    "tags": ["Spring Boot", "框架"],
+    "referenceAnswer": "@SpringBootApplication包含@SpringBootConfiguration、@EnableAutoConfiguration、@ComponentScan。自动配置核心是@EnableAutoConfiguration，通过SpringFactoriesLoader加载META-INF/spring.factories中的自动配置类。配置类使用@Conditional系列注解（如@ConditionalOnClass、@ConditionalOnMissingBean）进行条件判断，满足条件才生效。可通过application.yml覆盖默认配置。"
+  },
+  {
+    "title": "Java中的Stream API有什么特点？",
+    "description": "请说明Java8引入的Stream API的特点、常用操作和使用场景。",
+    "type": "TECHNICAL",
+    "difficulty": "EASY",
+    "tags": ["Java8", "函数式编程"],
+    "referenceAnswer": "Stream特点：1)不存储数据，按需计算；2)不修改源数据；3)延迟执行（惰性求值）；4)可并行处理。操作分两类：中间操作（filter、map、flatMap、sorted、distinct、limit、skip）和终端操作（collect、forEach、reduce、count、findFirst）。创建方式：Collection.stream()、Arrays.stream()、Stream.of()、Stream.iterate()。并行流使用parallelStream()或parallel()。"
+  },
+  {
+    "title": "请解释JVM的内存模型（JMM）。",
+    "description": "请说明Java内存模型的组成、可见性问题和volatile关键字的作用。",
+    "type": "TECHNICAL",
+    "difficulty": "HARD",
+    "tags": ["JVM", "Java并发"],
+    "referenceAnswer": "JMM定义了线程之间共享变量的访问规则。每个线程有自己的工作内存（CPU缓存），主内存存放共享变量。可见性问题：线程修改变量后可能未立即刷新到主内存。volatile关键字：1)保证可见性（立即刷新到主内存）；2)禁止指令重排序；3)不保证原子性。happens-before规则：volatile写 happens-before volatile读、unlock happens-before lock等。"
+  }
+]

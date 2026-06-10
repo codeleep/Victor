@@ -1,0 +1,168 @@
+@use '@/styles/variables.scss' as *;
+
+.dashboard-page {
+  width: 100%;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+
+  .header-left {
+    h1 {
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+
+    p {
+      color: $text-secondary;
+      font-size: 14px;
+    }
+  }
+}
+
+.stats-row {
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+
+  .ant-statistic-title {
+    color: $text-secondary;
+    font-size: 13px;
+  }
+
+  .ant-statistic-content {
+    font-size: 28px;
+    font-weight: 600;
+  }
+}
+
+.dashboard-sections {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.section-card {
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+
+  .ant-card-head {
+    border-bottom: 1px solid $border-subtle;
+  }
+
+  .ant-card-head-title {
+    font-weight: 600;
+  }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 32px 0;
+
+  p {
+    color: $text-secondary;
+    margin-bottom: 16px;
+  }
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-radius: $radius-sm;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba(20, 20, 19, 0.04);
+  }
+}
+
+.session-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.session-name {
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.session-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+
+  &.in_progress {
+    background: rgba(74, 158, 110, 0.1);
+    color: $accent-success;
+  }
+
+  &.completed {
+    background: rgba(217, 119, 87, 0.1);
+    color: $accent-primary;
+  }
+
+  &.paused {
+    background: rgba(212, 168, 67, 0.1);
+    color: $accent-warning;
+  }
+
+  &.abandoned {
+    background: rgba(196, 90, 74, 0.1);
+    color: $accent-error;
+  }
+}
+
+.session-time {
+  font-size: 12px;
+  color: $text-muted;
+}
+
+.quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: $radius-sm;
+  cursor: pointer;
+  transition: background 0.2s;
+  color: $text-primary;
+
+  &:hover {
+    background: rgba(217, 119, 87, 0.06);
+  }
+
+  .anticon {
+    font-size: 18px;
+    color: $accent-primary;
+  }
+
+  span {
+    font-weight: 500;
+  }
+}

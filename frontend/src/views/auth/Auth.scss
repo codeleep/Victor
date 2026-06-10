@@ -1,0 +1,100 @@
+@use '@/styles/variables.scss' as *;
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: $bg-primary;
+  padding: 24px;
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 400px;
+  background: $bg-secondary;
+  border-radius: $radius-lg;
+  padding: 40px;
+  box-shadow: $shadow-md;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 32px;
+
+  h1 {
+    font-size: 24px;
+    margin: 16px 0 8px;
+  }
+
+  p {
+    color: $text-secondary;
+    font-size: 14px;
+  }
+}
+
+.auth-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+
+  .logo-icon {
+    width: 40px;
+    height: 40px;
+    background: $accent-primary;
+    color: #fff;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 20px;
+    font-family: $font-display;
+  }
+
+  .logo-text {
+    font-family: $font-display;
+    font-size: 24px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+}
+
+.auth-form {
+  .ant-input-affix-wrapper {
+    border-radius: $radius-sm;
+  }
+
+  .ant-btn {
+    height: 44px;
+    border-radius: $radius-sm;
+    font-weight: 500;
+  }
+}
+
+.auth-footer {
+  text-align: center;
+  font-size: 14px;
+  color: $text-secondary;
+
+  a {
+    color: $accent-primary;
+    font-weight: 500;
+    margin-left: 4px;
+
+    &:hover {
+      color: $accent-secondary;
+    }
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-container {
+    padding: 24px;
+  }
+
+  .auth-header h1 {
+    font-size: 20px;
+  }
+}

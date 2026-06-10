@@ -1,0 +1,288 @@
+@use '@/styles/variables.scss' as *;
+
+.config-wizard {
+  display: flex;
+  gap: 0;
+  height: calc(100vh - #{$header-height} - 48px);
+  margin: -24px;
+}
+
+.wizard-sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: $bg-secondary;
+  border-right: 1px solid $border-subtle;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.wizard-steps {
+  flex: 1;
+
+  :global(.ant-steps-item-title) {
+    font-size: 13px !important;
+  }
+
+  :global(.ant-steps-item-description) {
+    font-size: 11px !important;
+  }
+}
+
+.wizard-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 24px 32px;
+}
+
+.content-header {
+  margin-bottom: 24px;
+
+  h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: $text-primary;
+    margin: 0;
+  }
+}
+
+.content-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.setup-form {
+  max-width: 640px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: $text-primary;
+  margin-bottom: 6px;
+}
+
+.mode-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.mode-option {
+  padding: 24px 16px;
+  border: 2px solid $border-subtle;
+  border-radius: $radius-md;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+  background: $bg-secondary;
+
+  &:hover {
+    border-color: $accent-primary;
+  }
+
+  &.selected {
+    border-color: $accent-primary;
+    background: rgba(217, 119, 87, 0.06);
+  }
+
+  .mode-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+
+  .mode-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: 4px;
+  }
+
+  .mode-desc {
+    font-size: 12px;
+    color: $text-secondary;
+  }
+}
+
+.round-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.duration-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.content-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid $border-subtle;
+  margin-top: auto;
+}
+
+// Recall step
+.recall-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: $text-secondary;
+
+  strong {
+    color: $accent-primary;
+  }
+}
+
+.recall-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.recall-list {
+  border: 1px solid $border-subtle;
+  border-radius: $radius-md;
+  max-height: 400px;
+  overflow-y: auto;
+
+  &[data-loading='true'] {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+}
+
+.recall-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid $border-subtle;
+  font-size: 13px;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.02);
+  }
+
+  &.selected {
+    background: rgba(217, 119, 87, 0.05);
+  }
+
+  .recall-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: $text-primary;
+  }
+}
+
+.recall-empty {
+  padding: 32px;
+  text-align: center;
+  color: $text-muted;
+  font-size: 13px;
+}
+
+// Summary step
+.summary-section {
+  margin-top: 24px;
+
+  h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: 16px;
+  }
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: $bg-secondary;
+  border-radius: $radius-sm;
+  font-size: 13px;
+
+  .summary-label {
+    color: $text-secondary;
+  }
+
+  .summary-value {
+    color: $text-primary;
+    font-weight: 500;
+  }
+}
+
+@media (max-width: 768px) {
+  .config-wizard {
+    flex-direction: column;
+    height: auto;
+    margin: -16px;
+  }
+
+  .wizard-sidebar {
+    width: 100%;
+    min-width: 100%;
+    padding: 16px;
+    border-right: none;
+    border-bottom: 1px solid $border-subtle;
+  }
+
+  .wizard-steps {
+    :global(.ant-steps) {
+      flex-direction: row !important;
+    }
+  }
+
+  .wizard-content {
+    padding: 20px 16px;
+  }
+
+  .mode-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .round-item {
+    flex-wrap: wrap;
+  }
+
+  .form-row {
+    flex-direction: column;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+}

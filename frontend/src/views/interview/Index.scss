@@ -1,0 +1,33 @@
+@use '@/styles/variables.scss' as *;
+
+.interview-index-page {
+  width: 100%;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+
+  .header-left {
+    h1 {
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+
+    p {
+      color: $text-secondary;
+      font-size: 14px;
+    }
+  }
+}
+
+.table-card {
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+
+  .ant-table {
+    background: transparent;
+  }
+}

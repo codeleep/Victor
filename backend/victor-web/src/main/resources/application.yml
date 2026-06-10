@@ -1,0 +1,59 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: victor-server
+
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/${DB_NAME:victor}
+    username: postgres
+    password: ${DB_PASSWORD:password}
+
+  sql:
+    init:
+      mode: never
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data.sql
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+  # 激活本地配置profile（从application-local.yml加载敏感参数）
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:default}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# 语音处理器模式: interview(Agent面试) / echo(复读机)
+speech:
+  processor: interview
+
+jwt:
+  secret: ${JWT_SECRET:your-secret-key-at-least-256-bits-long-for-hs256-algorithm}
+  expiration: ${JWT_EXPIRATION:86400000}
+  header: Authorization
+  prefix: Bearer
+
+# 文件存储配置
+file:
+  upload:
+    path: ${user.home}/victor/uploads
+    max-size: 52428800
+
+logging:
+  level:
+    me.codeleep.victor: debug
+    org.springframework.security: debug

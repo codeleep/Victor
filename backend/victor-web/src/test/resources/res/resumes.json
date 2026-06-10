@@ -1,0 +1,61 @@
+[
+  {
+    "name": "张三-Java开发工程师",
+    "rawText": "张三，5年Java开发经验，精通Spring Boot微服务架构，熟悉MySQL、Redis、Kafka。曾主导电商订单系统重构，日均处理订单量从10万提升至100万。具备良好的编码习惯和团队协作能力。",
+    "parsedContent": {
+      "name": "张三",
+      "phone": "138****1234",
+      "email": "zhangsan@example.com",
+      "education": "本科 - 计算机科学与技术 - 某大学 (2015-2019)",
+      "skills": ["Java", "Spring Boot", "MySQL", "Redis", "Kafka", "Docker"],
+      "experience": [
+        {"company": "某电商公司", "role": "高级Java开发", "period": "2021-至今", "desc": "负责订单系统架构设计与开发"},
+        {"company": "某互联网公司", "role": "Java开发", "period": "2019-2021", "desc": "负责用户中心和支付系统开发"}
+      ]
+    },
+    "summary": {
+      "overall": "5年Java开发经验，微服务架构经验丰富，有高并发系统经验",
+      "strengths": ["系统架构能力", "高并发处理", "技术深度"],
+      "weaknesses": ["缺乏团队管理经验"]
+    }
+  },
+  {
+    "name": "李四-前端开发工程师",
+    "rawText": "李四，3年前端开发经验，精通Vue3和React，熟悉TypeScript和前端工程化。参与过多个中后台管理系统和H5活动页面开发，注重代码质量和用户体验。",
+    "parsedContent": {
+      "name": "李四",
+      "phone": "139****5678",
+      "email": "lisi@example.com",
+      "education": "本科 - 软件工程 - 某大学 (2017-2021)",
+      "skills": ["Vue3", "React", "TypeScript", "Webpack", "Vite", "CSS3"],
+      "experience": [
+        {"company": "某科技公司", "role": "前端开发", "period": "2021-至今", "desc": "负责中后台管理系统前端开发"}
+      ]
+    },
+    "summary": {
+      "overall": "3年前端经验，Vue技术栈扎实，有完整的项目经验",
+      "strengths": ["Vue生态熟练", "工程化能力强"],
+      "weaknesses": ["后端知识薄弱", "大型项目经验不足"]
+    }
+  },
+  {
+    "name": "王五-全栈开发工程师",
+    "rawText": "王五，7年开发经验，前后端均能独立开发。熟悉Java/Spring Boot后端和React前端，有从0到1搭建产品的经验。曾在创业公司担任技术负责人，带领5人团队完成产品交付。",
+    "parsedContent": {
+      "name": "王五",
+      "phone": "137****9012",
+      "email": "wangwu@example.com",
+      "education": "硕士 - 计算机科学 - 某大学 (2013-2016)",
+      "skills": ["Java", "Spring Boot", "React", "PostgreSQL", "Docker", "AWS"],
+      "experience": [
+        {"company": "某创业公司", "role": "技术负责人", "period": "2020-至今", "desc": "带领5人团队从0到1搭建SaaS产品"},
+        {"company": "某大厂", "role": "高级开发", "period": "2016-2020", "desc": "负责核心业务模块开发"}
+      ]
+    },
+    "summary": {
+      "overall": "7年全栈经验，技术全面，有团队管理经验，适合技术负责人岗位",
+      "strengths": ["全栈能力", "团队管理", "产品思维"],
+      "weaknesses": ["技术深度有待加强"]
+    }
+  }
+]

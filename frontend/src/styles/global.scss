@@ -1,0 +1,233 @@
+@use './variables.scss' as *;
+
+// === CSS Custom Properties ===
+:root {
+  --bg-primary: #{$bg-primary};
+  --bg-secondary: #{$bg-secondary};
+  --bg-tertiary: #{$bg-tertiary};
+  --bg-card: #{$bg-card};
+  --bg-glass: #{$bg-glass};
+  --text-primary: #{$text-primary};
+  --text-secondary: #{$text-secondary};
+  --text-muted: #{$text-muted};
+  --accent-primary: #{$accent-primary};
+  --accent-secondary: #{$accent-secondary};
+  --accent-tertiary: #{$accent-tertiary};
+  --accent-success: #{$accent-success};
+  --accent-warning: #{$accent-warning};
+  --accent-error: #{$accent-error};
+  --border-subtle: #{$border-subtle};
+  --border-accent: #{$border-accent};
+  --shadow-sm: #{$shadow-sm};
+  --shadow-md: #{$shadow-md};
+  --shadow-lg: #{$shadow-lg};
+  --radius-sm: #{$radius-sm};
+  --radius-md: #{$radius-md};
+  --radius-lg: #{$radius-lg};
+  --radius-xl: #{$radius-xl};
+  --font-display: #{$font-display};
+  --font-body: #{$font-body};
+  --font-mono: #{$font-mono};
+  --header-height: #{$header-height};
+  --sidebar-width: #{$sidebar-width};
+  --sidebar-collapsed-width: #{$sidebar-collapsed-width};
+}
+
+// === Reset ===
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+// === Scrollbar ===
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(20, 20, 19, 0.12);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(20, 20, 19, 0.2);
+}
+
+// === Typography ===
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+ul, ol {
+  list-style: none;
+}
+
+// === Utilities ===
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+// === Markdown Editor ===
+.w-md-editor,
+.wmde-markdown {
+  --w-md-editor-bg: #{$bg-secondary} !important;
+  --w-md-editor-color: #{$text-primary} !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background-color: #{$bg-secondary} !important;
+  box-shadow: none !important;
+}
+
+.w-md-editor-toolbar {
+  background-color: #{$bg-secondary} !important;
+  border-bottom: 1px solid #{$border-subtle} !important;
+  border-radius: 0 !important;
+}
+
+.w-md-editor-content {
+  background-color: #{$bg-secondary} !important;
+}
+
+.w-md-editor-text-pre,
+.w-md-editor-text-input,
+.w-md-editor-text {
+  color: #{$text-primary} !important;
+}
+
+.wmde-markdown {
+  background-color: #{$bg-secondary} !important;
+  color: #{$text-primary} !important;
+}
+
+.preview-content {
+  .wmde-markdown {
+    padding: 16px;
+    background: transparent !important;
+  }
+}
+
+// === Ant Design Overrides ===
+.ant-btn-primary {
+  background: $accent-primary;
+  border-color: $accent-primary;
+
+  &:hover {
+    background: $accent-secondary;
+    border-color: $accent-secondary;
+  }
+}
+
+.ant-table {
+  background: $bg-secondary;
+}
+
+.ant-card {
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+}
+
+.ant-modal-content {
+  border-radius: $radius-lg;
+}
+
+// === Responsive ===
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    gap: 16px;
+
+    h1 {
+      font-size: 20px;
+    }
+  }
+
+  .filter-bar {
+    flex-direction: column;
+  }
+
+  .table-container {
+    padding: 12px;
+    overflow-x: auto;
+  }
+}
+
+// === Table Responsive ===
+.ant-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.ant-table {
+  min-width: 600px;
+}
+
+// === Card Responsive ===
+.ant-card {
+  width: 100%;
+}
+
+// === Modal Responsive ===
+@media (max-width: 768px) {
+  .ant-modal {
+    max-width: calc(100vw - 32px);
+    margin: 16px;
+  }
+
+  .ant-modal-content {
+    margin: 0;
+  }
+}
+
+// === Form Responsive ===
+@media (max-width: 768px) {
+  .ant-form-item {
+    margin-bottom: 16px;
+  }
+
+  .ant-space {
+    flex-wrap: wrap;
+  }
+}
+
+// === Tabs Responsive ===
+.ant-tabs-nav {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+  .ant-tabs-nav-wrap {
+    overflow-x: auto;
+  }
+}

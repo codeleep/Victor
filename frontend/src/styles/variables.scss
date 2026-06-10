@@ -1,0 +1,43 @@
+// Anthropic Warm Light Design Tokens
+
+// === Colors ===
+$bg-primary: #F5F3EC;
+$bg-secondary: #FFFFFF;
+$bg-tertiary: #ECE9E0;
+$bg-card: rgba(255, 255, 255, 0.8);
+$bg-glass: rgba(255, 255, 255, 0.85);
+
+$text-primary: #141413;
+$text-secondary: #5A5A58;
+$text-muted: #8E8E8C;
+
+$accent-primary: #D97757;
+$accent-secondary: #C4654A;
+$accent-tertiary: #E8956F;
+$accent-success: #4A9E6E;
+$accent-warning: #D4A843;
+$accent-error: #C45A4A;
+
+$border-subtle: rgba(20, 20, 19, 0.08);
+$border-accent: rgba(217, 119, 87, 0.3);
+
+// === Shadows ===
+$shadow-sm: 0 1px 3px rgba(20, 20, 19, 0.06);
+$shadow-md: 0 4px 12px rgba(20, 20, 19, 0.08);
+$shadow-lg: 0 8px 32px rgba(20, 20, 19, 0.1);
+
+// === Radius ===
+$radius-sm: 8px;
+$radius-md: 12px;
+$radius-lg: 16px;
+$radius-xl: 24px;
+
+// === Fonts ===
+$font-display: 'Lora', serif;
+$font-body: 'Poppins', 'Noto Sans SC', sans-serif;
+$font-mono: 'JetBrains Mono', monospace;
+
+// === Layout ===
+$header-height: 64px;
+$sidebar-width: 240px;
+$sidebar-collapsed-width: 64px;

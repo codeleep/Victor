@@ -1,0 +1,81 @@
+@use '@/styles/variables.scss' as *;
+
+.report-page {
+  width: 100%;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+
+  .header-left {
+    h1 {
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+
+    p {
+      color: $text-secondary;
+      font-size: 14px;
+    }
+  }
+}
+
+.table-card {
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+}
+
+.report-detail {
+  width: 100%;
+}
+
+.report-overview {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.score-card {
+  text-align: center;
+  padding: 32px;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+}
+
+.score-ring {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  font-size: 32px;
+  font-weight: 700;
+  background: $bg-tertiary;
+}
+
+.summary-card {
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+}
+
+.section-card {
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+  .report-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .score-card {
+    padding: 20px;
+  }
+}
