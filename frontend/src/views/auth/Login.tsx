@@ -39,6 +39,7 @@ export default function Login() {
         </div>
         <Form
           name="login"
+          initialValues={{ username: 'admin', password: 'admin123' }}
           onFinish={onFinish}
           autoComplete="off"
           size="large"
