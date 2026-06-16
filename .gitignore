@@ -23,3 +23,11 @@ Thumbs.db
 
 # Docker
 victor-pgdata/
+
+# Local browser/test runtime
+.edge-profile/
+.run-logs/
+
+# Frontend generated config output
+frontend/vite.config.js
+frontend/vite.config.d.ts
