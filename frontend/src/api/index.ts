@@ -209,32 +209,31 @@ export const agentTeamApi = {
   }
 }
 
-// ==================== Agent LLM Config API ====================
+// ==================== LLM Config API ====================
 
 export const agentLlmConfigApi = {
-  list(agentId: number): Promise<AgentLlmConfigVO[]> {
-    return request.get<AgentLlmConfigVO[]>(`/agents/${agentId}/llm-config`)
+  list(): Promise<AgentLlmConfigVO[]> {
+    return request.get<AgentLlmConfigVO[]>('/llm-configs')
   },
-  getById(agentId: number, id: number): Promise<AgentLlmConfigVO> {
-    return request.get<AgentLlmConfigVO>(`/agents/${agentId}/llm-config/${id}`)
+  getById(id: number): Promise<AgentLlmConfigVO> {
+    return request.get<AgentLlmConfigVO>(`/llm-configs/${id}`)
   },
-  create(agentId: number, data: AgentLlmConfigRequest): Promise<AgentLlmConfigVO> {
-    return request.post<AgentLlmConfigVO>(`/agents/${agentId}/llm-config`, data)
+  create(data: AgentLlmConfigRequest): Promise<AgentLlmConfigVO> {
+    return request.post<AgentLlmConfigVO>('/llm-configs', data)
   },
-  update(agentId: number, id: number, data: AgentLlmConfigRequest): Promise<AgentLlmConfigVO> {
-    return request.put<AgentLlmConfigVO>(`/agents/${agentId}/llm-config/${id}`, data)
+  update(id: number, data: AgentLlmConfigRequest): Promise<AgentLlmConfigVO> {
+    return request.put<AgentLlmConfigVO>(`/llm-configs/${id}`, data)
   },
-  delete(agentId: number, id: number): Promise<void> {
-    return request.delete<void>(`/agents/${agentId}/llm-config/${id}`)
+  delete(id: number): Promise<void> {
+    return request.delete<void>(`/llm-configs/${id}`)
   },
-  setDefault(agentId: number, id: number): Promise<void> {
-    return request.put<void>(`/agents/${agentId}/llm-config/${id}/default`)
+  setDefault(id: number): Promise<void> {
+    return request.put<void>(`/llm-configs/${id}/default`)
   },
-  testConnection(agentId: number, id: number): Promise<void> {
-    return request.post<void>(`/agents/${agentId}/llm-config/${id}/test`)
+  testConnection(id: number): Promise<void> {
+    return request.post<void>(`/llm-configs/${id}/test`)
   }
 }
-
 // ==================== Interview Config API ====================
 
 export const interviewConfigApi = {
@@ -529,3 +528,5 @@ export const metadataApi = {
     return request.delete<void>(`/metadata/${id}`)
   }
 }
+
+

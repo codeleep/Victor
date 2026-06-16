@@ -153,20 +153,11 @@ function AgentPanel() {
   const loadLlmOptions = async () => {
     setLlmOptionsLoading(true)
     try {
-      const agents = await agentApi.list()
-      const results = await Promise.all(
-        agents.map(async a => {
-          try {
-            const configs = await agentLlmConfigApi.list(a.id)
-            return configs.map(c => ({
-              label: `${c.name} (${c.modelName}${c.protocol ? ` / ${c.protocol}` : ''})`,
-              value: c.id
-            }))
-          } catch { return [] }
-        })
-      )
-      const options = results.flat()
-      setLlmOptions(Array.from(new Map(options.map(option => [option.value, option])).values()))
+      const configs = await agentLlmConfigApi.list()
+      setLlmOptions(configs.map(c => ({
+        label: `${c.name} (${c.modelName}${c.protocol ? ` / ${c.protocol}` : ''})`,
+        value: c.id
+      })))
     } catch (e) { console.error(e) } finally { setLlmOptionsLoading(false) }
   }
 
@@ -270,34 +261,22 @@ function AgentPanel() {
 
 function LlmPanel() {
   const { message } = App.useApp()
-  const [agents, setAgents] = useState<AgentVO[]>([])
-  const [selectedAgent, setSelectedAgent] = useState<number | null>(null)
   const [configs, setConfigs] = useState<AgentLlmConfigVO[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form] = Form.useForm()
 
-  useEffect(() => { loadAgents() }, [])
-  useEffect(() => { if (selectedAgent) loadConfigs() }, [selectedAgent])
-
-  const loadAgents = async () => {
-    try {
-      const data = await agentApi.list()
-      setAgents(data)
-      if (data.length > 0) setSelectedAgent(data[0].id)
-    } catch (e) { console.error(e) }
-  }
+  useEffect(() => { loadConfigs() }, [])
 
   const loadConfigs = async () => {
-    if (!selectedAgent) return
     setLoading(true)
-    try { setConfigs(await agentLlmConfigApi.list(selectedAgent)) } catch (e) { console.error(e) } finally { setLoading(false) }
+    try { setConfigs(await agentLlmConfigApi.list()) } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
   const handleAdd = () => {
     setEditingId(null); form.resetFields()
-    form.setFieldsValue({ protocol: 'OPENAI', modelType: 'INFERENCE', temperature: 0.7, maxTokens: 2048 })
+    form.setFieldsValue({ protocol: 'OPENAI', modelType: 'INFERENCE', temperature: 0.7, maxTokens: 2048, isEnabled: true, isDefault: false })
     setModalOpen(true)
   }
   const handleEdit = (row: AgentLlmConfigVO) => {
@@ -306,23 +285,23 @@ function LlmPanel() {
     setModalOpen(true)
   }
   const handleSubmit = async () => {
-    if (!selectedAgent) return
     try {
       const values = await form.validateFields()
       const { apiKey, ...rest } = values
       const payload: AgentLlmConfigRequest = { ...rest, authParams: apiKey ? { apiKey } : undefined }
-      if (editingId) { await agentLlmConfigApi.update(selectedAgent, editingId, payload); message.success('更新成功') }
-      else { await agentLlmConfigApi.create(selectedAgent, payload); message.success('创建成功') }
+      if (editingId) { await agentLlmConfigApi.update(editingId, payload); message.success('更新成功') }
+      else { await agentLlmConfigApi.create(payload); message.success('创建成功') }
       setModalOpen(false); loadConfigs()
     } catch (e) { console.error(e) }
   }
   const handleDelete = async (id: number) => {
-    if (!selectedAgent) return
-    try { await agentLlmConfigApi.delete(selectedAgent, id); message.success('删除成功'); loadConfigs() } catch (e) { console.error(e) }
+    try { await agentLlmConfigApi.delete(id); message.success('删除成功'); loadConfigs() } catch (e) { console.error(e) }
   }
   const handleTest = async (id: number) => {
-    if (!selectedAgent) return
-    try { await agentLlmConfigApi.testConnection(selectedAgent, id); message.success('连接成功') } catch (e) { /* interceptor 已显示错误 */ }
+    try { await agentLlmConfigApi.testConnection(id); message.success('连接成功') } catch (e) { /* interceptor 已显示错误 */ }
+  }
+  const handleSetDefault = async (id: number) => {
+    try { await agentLlmConfigApi.setDefault(id); message.success('已设为默认'); loadConfigs() } catch (e) { console.error(e) }
   }
 
   const columns = [
@@ -338,10 +317,11 @@ function LlmPanel() {
       )
     },
     {
-      title: '操作', key: 'action', width: 200,
+      title: '操作', key: 'action', width: 260,
       render: (_: unknown, r: AgentLlmConfigVO) => (
         <Space>
           <Button type="link" onClick={() => handleTest(r.id)}>测试</Button>
+          {!r.isDefault && <Button type="link" onClick={() => handleSetDefault(r.id)}>设为默认</Button>}
           <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(r)}>编辑</Button>
           <Popconfirm title="确定删除？" onConfirm={() => handleDelete(r.id)}>
             <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
@@ -354,10 +334,7 @@ function LlmPanel() {
   return (
     <>
       <div style={{ marginBottom: 16 }}>
-        <Space>
-          <Select value={selectedAgent} onChange={setSelectedAgent} placeholder="选择 Agent" style={{ width: 200 }} options={agents.map(a => ({ label: a.name, value: a.id }))} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={!selectedAgent}>新增配置</Button>
-        </Space>
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>新增配置</Button>
       </div>
       <Table columns={columns} dataSource={configs} rowKey="id" loading={loading} pagination={false} />
       <Modal title={editingId ? '编辑模型配置' : '新增模型配置'} open={modalOpen} onOk={handleSubmit} onCancel={() => setModalOpen(false)} width={700}>
@@ -387,7 +364,6 @@ function LlmPanel() {
     </>
   )
 }
-
 export default function AiConfig() {
   const { message } = App.useApp()
   const [initLoading, setInitLoading] = useState(false)
@@ -446,3 +422,5 @@ export default function AiConfig() {
     </div>
   )
 }
+
+

@@ -38,17 +38,17 @@ public class LlmConfigModuleInitializer implements ModuleInitializer {
         if (existing == null) {
             AgentLlmConfig config = new AgentLlmConfig();
             config.setUserId(userId);
-            config.setName("默认LLM配置");
-            config.setDescription("系统初始化创建的默认LLM配置，请修改API端点和密钥后启用");
-            config.setProvider("OPENAI");
-            config.setApiEndpoint("https://api.openai.com/v1");
-            config.setAuthParams(Map.of("apiKey", ""));
-            config.setProtocol(LlmProtocol.OPENAI);
-            config.setModelName("gpt-4o");
+            config.setName("火山方舟默认LLM配置");
+            config.setDescription("系统初始化创建的默认火山方舟 LLM 配置");
+            config.setProvider("DOUBAO");
+            config.setApiEndpoint(env("ARK_API_ENDPOINT", "https://ark.cn-beijing.volces.com/api/coding/v3"));
+            config.setAuthParams(Map.of("apiKey", env("ARK_API_KEY", "")));
+            config.setProtocol(LlmProtocol.DOUBAO);
+            config.setModelName(env("ARK_MODEL_NAME", "ark-code-latest"));
             config.setModelType(ModelType.INFERENCE);
             config.setTemperature(new BigDecimal("0.70"));
             config.setMaxTokens(4096);
-            config.setIsEnabled(false);
+            config.setIsEnabled(!env("ARK_API_KEY", "").isBlank());
             config.setIsDefault(true);
             agentLlmConfigMapper.insert(config);
             llmCreated = 1;
@@ -59,4 +59,10 @@ public class LlmConfigModuleInitializer implements ModuleInitializer {
         result.put("llmCreated", llmCreated);
         return result;
     }
+
+    private String env(String name, String fallback) {
+        String value = System.getenv(name);
+        return value != null && !value.isBlank() ? value : fallback;
+    }
 }
+

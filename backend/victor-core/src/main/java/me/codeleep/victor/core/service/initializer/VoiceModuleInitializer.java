@@ -53,13 +53,15 @@ public class VoiceModuleInitializer implements ModuleInitializer {
 
         VoiceAsrConfig config = new VoiceAsrConfig();
         config.setUserId(userId);
-        config.setName("默认ASR配置");
-        config.setDescription("系统初始化创建的默认语音识别配置，请修改API端点和密钥后启用");
-        config.setProvider(VoiceServiceProvider.ALIYUN);
-        config.setApiEndpoint("");
-        config.setAuthParams(Map.of("apiKey", ""));
-        config.setLanguage("zh-CN");
-        config.setExtraParams(Map.of());
+        config.setName("火山引擎语音识别");
+        config.setDescription("火山引擎 BigASR 语音识别服务");
+        config.setProvider(VoiceServiceProvider.DOUBAO);
+        config.setApiEndpoint(env("VOLC_ASR_ENDPOINT", "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"));
+        config.setAuthParams(Map.of("apiKey", env("VOLC_API_KEY", "")));
+        config.setLanguage(env("VOLC_ASR_VOICE", "zh-CN"));
+        config.setExtraParams(Map.of(
+                "resourceId", env("VOLC_ASR_RESOURCE_ID", "volc.bigasr.sauc.duration")
+        ));
         config.setIsEnabled(true);
         config.setIsDefault(true);
         voiceAsrConfigMapper.insert(config);
@@ -79,17 +81,26 @@ public class VoiceModuleInitializer implements ModuleInitializer {
 
         VoiceTtsConfig config = new VoiceTtsConfig();
         config.setUserId(userId);
-        config.setName("默认TTS配置");
-        config.setDescription("系统初始化创建的默认语音合成配置，请修改API端点和密钥后启用");
-        config.setProvider(VoiceServiceProvider.ALIYUN);
-        config.setApiEndpoint("");
-        config.setAuthParams(Map.of("apiKey", ""));
-        config.setVoiceName("");
-        config.setExtraParams(Map.of());
+        config.setName("火山引擎语音合成");
+        config.setDescription("火山引擎双向TTS语音合成服务");
+        config.setProvider(VoiceServiceProvider.DOUBAO);
+        config.setApiEndpoint(env("VOLC_TTS_ENDPOINT", "wss://openspeech.bytedance.com/api/v3/tts/bidirection"));
+        config.setAuthParams(Map.of("apiKey", env("VOLC_API_KEY", "")));
+        config.setExtraParams(Map.of(
+                "resourceId", env("VOLC_TTS_RESOURCE_ID", "seed-tts-2.0"),
+                "encoding", env("VOLC_TTS_ENCODING", "wav"),
+                "speedRatio", Double.parseDouble(env("VOLC_TTS_SPEED_RATIO", "1.5"))
+        ));
+        config.setVoiceName(env("VOLC_TTS_VOICE", "zh_female_xiaohe_uranus_bigtts"));
         config.setIsEnabled(true);
         config.setIsDefault(true);
         voiceTtsConfigMapper.insert(config);
         log.info("[VoiceInit] 创建默认TTS配置: id={}", config.getId());
         return true;
+    }
+
+    private String env(String name, String fallback) {
+        String value = System.getenv(name);
+        return value != null && !value.isBlank() ? value : fallback;
     }
 }

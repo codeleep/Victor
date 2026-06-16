@@ -135,7 +135,9 @@ public class VolcTtsSession implements TtsSession {
 
     @Override
     public byte[] takeAudio() throws InterruptedException {
+        throwIfError();
         byte[] audio = audioQueue.take();
+        throwIfError();
         if (audio.length == 0) {
             return null;
         }
@@ -144,7 +146,9 @@ public class VolcTtsSession implements TtsSession {
 
     @Override
     public byte[] pollAudio(long timeoutMs) throws InterruptedException {
+        throwIfError();
         byte[] audio = audioQueue.poll(timeoutMs, TimeUnit.MILLISECONDS);
+        throwIfError();
         if (audio == null || audio.length == 0) {
             return null;
         }
@@ -168,7 +172,14 @@ public class VolcTtsSession implements TtsSession {
 
     @Override
     public boolean isFinished() {
+        throwIfError();
         return finished.get();
+    }
+
+    private void throwIfError() {
+        if (lastError != null) {
+            throw new RuntimeException(lastError);
+        }
     }
 
     @Override
@@ -269,3 +280,6 @@ public class VolcTtsSession implements TtsSession {
         return data;
     }
 }
+
+
+
