@@ -1,4 +1,4 @@
-﻿# ==================== Stage 1: Build Frontend ====================
+# ==================== Stage 1: Build Frontend ====================
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /build/frontend
@@ -17,10 +17,10 @@ COPY backend/victor-infra/pom.xml victor-infra/pom.xml
 COPY backend/victor-core/pom.xml victor-core/pom.xml
 COPY backend/victor-web/pom.xml victor-web/pom.xml
 
-RUN mvn dependency:go-offline -B 2>/dev/null || true
+RUN --mount=type=cache,target=/root/.m2 mvn dependency:go-offline -B 2>/dev/null || true
 
 COPY backend/ .
-RUN mvn clean package -DskipTests -B
+RUN --mount=type=cache,target=/root/.m2 mvn -pl victor-web -am clean package -DskipTests -B
 
 # ==================== Stage 3: Runtime ====================
 FROM eclipse-temurin:21-jre-alpine
@@ -47,4 +47,4 @@ WORKDIR /app
 
 EXPOSE 80
 
-ENTRYPOINT [ /app/entrypoint.sh]
+ENTRYPOINT ["/app/entrypoint.sh"]

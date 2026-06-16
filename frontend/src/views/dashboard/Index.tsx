@@ -152,7 +152,7 @@ export default function Dashboard() {
       </Row>
 
       <div className="dashboard-sections">
-        <Card title="最近面试" className="section-card">
+        <Card title="最近面试" className="section-card" loading={loading}>
           {sessions.length === 0 ? (
             <div className="empty-state">
               <p>暂无面试记录</p>

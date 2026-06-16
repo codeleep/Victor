@@ -131,7 +131,7 @@ function AgentTeamPanel() {
   )
 }
 
-function AgentPanel({ onRefresh }: { onRefresh?: () => void }) {
+function AgentPanel() {
   const { message } = App.useApp()
   const metadataStore = useMetadataStore()
   const [data, setData] = useState<AgentVO[]>([])

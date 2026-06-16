@@ -1,9 +1,7 @@
-﻿.git
+.git
 .idea
 docs
 *.md
 docker-compose.yml
 frontend/node_modules
-frontend/dist
-backend/target
 backend/.idea

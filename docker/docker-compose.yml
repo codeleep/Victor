@@ -1,0 +1,55 @@
+name: victor
+
+services:
+  victor-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.runtime
+    image: victor-app:latest
+    container_name: victor-app
+    environment:
+      DB_HOST: victor-postgres
+      DB_PORT: 5432
+      DB_NAME: victor
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: victor-ai-default-jwt-secret-key-must-be-at-least-256-bits-long
+      JWT_EXPIRATION: 86400000
+      SPRING_PROFILES_ACTIVE: default
+    ports:
+      - "80:80"
+    volumes:
+      - victor-uploads:/root/victor/uploads
+    depends_on:
+      victor-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  victor-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: victor-postgres
+    environment:
+      POSTGRES_DB: victor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - victor-pgdata:/var/lib/postgresql/data
+      - ../backend/victor-web/src/main/resources/db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d victor"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  victor-pgdata:
+  victor-uploads:
