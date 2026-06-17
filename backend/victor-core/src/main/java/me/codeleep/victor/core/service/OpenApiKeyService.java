@@ -41,6 +41,16 @@ public interface OpenApiKeyService {
     OpenApiKeyVO getByKey(String apiKey);
 
     /**
+     * 根据API Key获取用户ID（无需UserContext，用于API认证）
+     */
+    Long getUserIdByKey(String apiKey);
+
+    /**
+     * 验证API Key是否有效（无需UserContext，用于API认证）
+     */
+    OpenApiKeyVO authenticateByKey(String apiKey);
+
+    /**
      * 验证API Key是否有效
      */
     boolean validate(String apiKey);

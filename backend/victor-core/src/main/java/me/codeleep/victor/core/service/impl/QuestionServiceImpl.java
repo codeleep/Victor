@@ -35,7 +35,23 @@ public class QuestionServiceImpl implements QuestionService {
     public QuestionVO create(QuestionRequest request) {
         Question question = questionConverter.toEntity(request);
         question.setUserId(UserContext.getUserId());
-        question.setSource(QuestionSource.USER);
+        
+        // 根据认证方式设置来源和导入状态
+        if (UserContext.isApiKeyAuth()) {
+            question.setSource(QuestionSource.OPEN_API);
+            question.setSourceApiKeyId(UserContext.getApiKeyId());
+            // 根据API Key配置设置默认导入状态
+            String defaultStatus = UserContext.getDefaultIngestStatus();
+            if ("PENDING_REVIEW".equals(defaultStatus)) {
+                question.setIngestStatus(IngestStatus.PENDING_REVIEW);
+            } else {
+                question.setIngestStatus(IngestStatus.ACTIVE);
+            }
+        } else {
+            question.setSource(QuestionSource.USER);
+            question.setIngestStatus(IngestStatus.ACTIVE);
+        }
+        
         questionMapper.insert(question);
         return questionConverter.toVO(question);
     }

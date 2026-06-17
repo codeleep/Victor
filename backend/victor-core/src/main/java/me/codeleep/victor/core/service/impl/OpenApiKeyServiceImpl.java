@@ -112,6 +112,54 @@ public class OpenApiKeyServiceImpl implements OpenApiKeyService {
     }
 
     @Override
+    public Long getUserIdByKey(String apiKey) {
+        OpenApiKey key = openApiKeyMapper.selectOne(
+                new LambdaQueryWrapper<OpenApiKey>()
+                        .eq(OpenApiKey::getApiKey, apiKey)
+                        .eq(OpenApiKey::getStatus, OpenApiKeyStatus.ENABLED)
+        );
+        
+        if (key == null) {
+            return null;
+        }
+        
+        // 检查是否过期
+        if (key.getExpiresAt() != null && key.getExpiresAt().isBefore(LocalDateTime.now())) {
+            return null;
+        }
+        
+        // 更新最后使用时间
+        key.setLastUsedAt(LocalDateTime.now());
+        openApiKeyMapper.updateById(key);
+        
+        return key.getUserId();
+    }
+
+    @Override
+    public OpenApiKeyVO authenticateByKey(String apiKey) {
+        OpenApiKey key = openApiKeyMapper.selectOne(
+                new LambdaQueryWrapper<OpenApiKey>()
+                        .eq(OpenApiKey::getApiKey, apiKey)
+                        .eq(OpenApiKey::getStatus, OpenApiKeyStatus.ENABLED)
+        );
+        
+        if (key == null) {
+            return null;
+        }
+        
+        // 检查是否过期
+        if (key.getExpiresAt() != null && key.getExpiresAt().isBefore(LocalDateTime.now())) {
+            return null;
+        }
+        
+        // 更新最后使用时间
+        key.setLastUsedAt(LocalDateTime.now());
+        openApiKeyMapper.updateById(key);
+        
+        return toVO(key);
+    }
+
+    @Override
     public boolean validate(String apiKey) {
         Long userId = UserContext.getUserId();
         if (userId == null) {
@@ -156,9 +204,10 @@ public class OpenApiKeyServiceImpl implements OpenApiKeyService {
         }
     }
 
-    private OpenApiKeyVO toVO(OpenApiKey entity) {
+        private OpenApiKeyVO toVO(OpenApiKey entity) {
         OpenApiKeyVO vo = new OpenApiKeyVO();
         vo.setId(entity.getId());
+        vo.setUserId(entity.getUserId());
         vo.setName(entity.getName());
         vo.setDescription(entity.getDescription());
         vo.setApiKey(entity.getApiKey());

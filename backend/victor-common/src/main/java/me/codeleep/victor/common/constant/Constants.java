@@ -89,4 +89,14 @@ public interface Constants {
      * 插件安装路径
      */
     String PLUGIN_INSTALL_PATH = "storage/plugins";
+
+    /**
+     * API Key请求头
+     */
+    String API_KEY_HEADER = "X-API-Key";
+
+    /**
+     * API Key请求参数
+     */
+    String API_KEY_PARAM = "apiKey";
 }

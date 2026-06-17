@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "牛客题库导入 Victor",
+  "version": "0.1.0",
+  "description": "从牛客网面试题库抓取题目，并上传到 Victor AI 题库。",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.nowcoder.com/*",
+    "https://nowcoder.com/*",
+    "http://localhost:8080/*",
+    "http://127.0.0.1:8080/*",
+    "http://localhost:5173/*",
+    "http://127.0.0.1:5173/*"
+  ],
+  "action": {
+    "default_title": "牛客题库导入",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.nowcoder.com/exam/interview/*",
+        "https://www.nowcoder.com/interview/center*",
+        "https://www.nowcoder.com/discuss/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

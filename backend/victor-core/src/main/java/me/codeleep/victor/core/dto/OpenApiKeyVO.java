@@ -15,6 +15,11 @@ public class OpenApiKeyVO {
     private Long id;
 
     /**
+     * 用户ID
+     */
+    private Long userId;
+
+    /**
      * Key名称
      */
     private String name;

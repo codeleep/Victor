@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>牛客题库导入 Victor</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      width: 420px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #fff;
+    }
+    .title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 12px;
+    }
+    .section {
+      margin-bottom: 12px;
+    }
+    .label {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 4px;
+      display: block;
+    }
+    .input, .textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .input:focus, .textarea:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+    .textarea {
+      resize: vertical;
+      min-height: 60px;
+      font-family: inherit;
+    }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-primary {
+      background: #3b82f6;
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: #2563eb;
+    }
+    .btn-primary:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .btn-danger {
+      background: #ef4444;
+      color: #fff;
+      margin-top: 8px;
+    }
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+    .status {
+      margin-top: 12px;
+      padding: 10px;
+      background: #f9fafb;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #374151;
+      line-height: 1.5;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .checkbox-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .checkbox-wrap label {
+      font-size: 13px;
+      color: #666;
+      cursor: pointer;
+    }
+    .radio-group {
+      display: flex;
+      gap: 16px;
+      margin-top: 4px;
+    }
+    .radio-label {
+      font-size: 13px;
+      color: #666;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="title">牛客题库导入 Victor</div>
+
+  <div class="section">
+    <label class="label" for="victorBaseUrl">Victor 后端地址</label>
+    <input type="text" id="victorBaseUrl" class="input" value="http://localhost:8080">
+  </div>
+
+  <div class="section">
+    <label class="label">认证方式</label>
+    <div class="radio-group">
+      <label class="radio-label">
+        <input type="radio" name="authType" value="apiKey" checked>
+        API Key (推荐)
+      </label>
+      <label class="radio-label">
+        <input type="radio" name="authType" value="jwt">
+        JWT Token
+      </label>
+    </div>
+  </div>
+
+  <div class="section">
+    <label class="label" for="victorApiKey">Victor API Key</label>
+    <input type="text" id="victorApiKey" class="input" placeholder="在 Victor 系统中创建的 API Key">
+  </div>
+
+  <div class="section" id="jwtTokenSection" style="display:none">
+    <label class="label" for="victorToken">Victor Token (<a href="#" id="autoFillToken">自动获取</a>)</label>
+    <input type="text" id="victorToken" class="input" placeholder="登录 Victor 后自动获取或手动填写">
+  </div>
+
+  <div class="section">
+    <label class="label" for="questionDelay">题目抓取间隔 (ms)</label>
+    <input type="number" id="questionDelay" class="input" value="1500" min="500">
+  </div>
+
+  <div class="checkbox-wrap">
+    <input type="checkbox" id="includeSource" checked>
+    <label for="includeSource">题目描述中包含来源信息</label>
+  </div>
+
+  <button id="startBtn" class="btn btn-primary">开始抓取并上传</button>
+  <button id="stopBtn" class="btn btn-danger" disabled>停止</button>
+
+  <div id="status" class="status">等待开始...</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -199,7 +199,7 @@ export default function QuestionList() {
       render: (_: unknown, record: QuestionVO) => (
         <Space>
           <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-          {record.source === 'OPEN_API' && record.ingestStatus === 'PENDING_REVIEW' && (
+          {record.ingestStatus === 'PENDING_REVIEW' && (
             <Dropdown menu={{
               items: [
                 { key: 'approve', label: '通过', onClick: () => handleApprove(record.id) },
@@ -305,3 +305,4 @@ export default function QuestionList() {
     </div>
   )
 }
+
