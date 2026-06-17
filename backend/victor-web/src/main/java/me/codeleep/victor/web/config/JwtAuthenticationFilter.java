@@ -38,16 +38,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         try {
             String jwt = extractJwtFromRequest(request);
-
             if (StringUtils.hasText(jwt) && validateToken(jwt)) {
                 Long userId = jwtUtils.extractUserId(jwt);
                 String username = jwtUtils.extractUsername(jwt);
 
-                // 设置UserContext
                 UserContext.setUserId(userId);
                 UserContext.setUsername(username);
 
-                // 设置SecurityContext
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userId,
                         null,
@@ -59,7 +56,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 log.debug("JWT认证成功: userId={}, username={}", userId, username);
             }
         } catch (Exception e) {
-            log.error("JWT认证失败: {}", e.getMessage());
+            log.error("认证失败: {}", e.getMessage());
             SecurityContextHolder.clearContext();
             UserContext.clear();
         }
@@ -67,14 +64,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             filterChain.doFilter(request, response);
         } finally {
-            // 清理ThreadLocal，防止内存泄漏
             UserContext.clear();
         }
     }
 
-    /**
-     * 从请求中提取JWT
-     */
     private String extractJwtFromRequest(HttpServletRequest request) {
         String bearerToken = request.getHeader(Constants.TOKEN_HEADER);
         if (StringUtils.hasText(bearerToken) && bearerToken.startsWith(Constants.TOKEN_PREFIX)) {
@@ -83,9 +76,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return null;
     }
 
-    /**
-     * 验证Token
-     */
     private boolean validateToken(String token) {
         try {
             String username = jwtUtils.extractUsername(token);
