@@ -46,3 +46,5 @@ build/
 .DS_Store
 .claude
 .agents
+# Logs directory
+logs/

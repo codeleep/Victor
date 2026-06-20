@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import me.codeleep.victor.common.enums.ExperienceType;
 import me.codeleep.victor.common.enums.IngestStatus;
+import me.codeleep.victor.common.enums.SourceType;
 import me.codeleep.victor.common.exception.BusinessException;
 import me.codeleep.victor.common.result.ResultCode;
 import me.codeleep.victor.common.context.UserContext;
@@ -33,6 +34,23 @@ public class ExperienceServiceImpl implements ExperienceService {
     public ExperienceVO create(ExperienceRequest request) {
         Experience experience = experienceConverter.toEntity(request);
         experience.setUserId(UserContext.getUserId());
+        
+        // 根据认证方式设置来源和导入状态
+        if (UserContext.isApiKeyAuth()) {
+            experience.setSourceType(SourceType.OPEN_API);
+            experience.setSourceApiKeyId(UserContext.getApiKeyId());
+            // 根据API Key配置设置默认导入状态
+            String defaultStatus = UserContext.getDefaultIngestStatus();
+            if ("PENDING_REVIEW".equals(defaultStatus)) {
+                experience.setIngestStatus(IngestStatus.PENDING_REVIEW);
+            } else {
+                experience.setIngestStatus(IngestStatus.ACTIVE);
+            }
+        } else {
+            experience.setSourceType(SourceType.USER);
+            experience.setIngestStatus(IngestStatus.ACTIVE);
+        }
+        
         experienceMapper.insert(experience);
         return experienceConverter.toVO(experience);
     }

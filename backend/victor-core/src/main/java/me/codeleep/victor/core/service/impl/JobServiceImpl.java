@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import me.codeleep.victor.common.enums.IngestStatus;
+import me.codeleep.victor.common.enums.SourceType;
 import me.codeleep.victor.common.exception.BusinessException;
 import me.codeleep.victor.common.result.ResultCode;
 import me.codeleep.victor.common.context.UserContext;
@@ -34,6 +35,23 @@ public class JobServiceImpl implements JobService {
     public JobVO create(JobRequest request) {
         Job job = jobConverter.toEntity(request);
         job.setUserId(UserContext.getUserId());
+        
+        // 根据认证方式设置来源和导入状态
+        if (UserContext.isApiKeyAuth()) {
+            job.setSourceType(SourceType.OPEN_API);
+            job.setSourceApiKeyId(UserContext.getApiKeyId());
+            // 根据API Key配置设置默认导入状态
+            String defaultStatus = UserContext.getDefaultIngestStatus();
+            if ("PENDING_REVIEW".equals(defaultStatus)) {
+                job.setIngestStatus(IngestStatus.PENDING_REVIEW);
+            } else {
+                job.setIngestStatus(IngestStatus.ACTIVE);
+            }
+        } else {
+            job.setSourceType(SourceType.USER);
+            job.setIngestStatus(IngestStatus.ACTIVE);
+        }
+        
         jobMapper.insert(job);
         return jobConverter.toVO(job);
     }

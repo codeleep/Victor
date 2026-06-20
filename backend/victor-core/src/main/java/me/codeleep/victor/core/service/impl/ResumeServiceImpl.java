@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.codeleep.victor.common.enums.IngestStatus;
+import me.codeleep.victor.common.enums.SourceType;
 import me.codeleep.victor.common.enums.ResumeStatus;
 import me.codeleep.victor.common.exception.BusinessException;
 import me.codeleep.victor.common.result.ResultCode;
@@ -271,3 +272,4 @@ public class ResumeServiceImpl implements ResumeService {
     }
 
 }
+
