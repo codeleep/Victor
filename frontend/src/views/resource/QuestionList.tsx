@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Card, Table, Button, Tag, Space, Modal, Form, Input, Select, Popover, Dropdown, message, Popconfirm } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
-import MDEditor from '@uiw/react-md-editor'
+import MarkdownEditor from '@/components/MarkdownEditor'
+import MarkdownView from '@/components/MarkdownView'
 import { questionApi } from '@/api'
 import { useMetadataStore } from '@/stores/metadata'
 import type { QuestionVO, QuestionRequest, QuestionQueryRequest } from '@/types'
@@ -288,7 +289,7 @@ export default function QuestionList() {
             <Select mode="tags" placeholder="输入标签后回车" />
           </Form.Item>
           <Form.Item name="referenceAnswer" label="参考答案">
-            <MDEditor height={200} />
+            <MarkdownEditor height={300} />
           </Form.Item>
         </Form>
       </Modal>
@@ -298,9 +299,11 @@ export default function QuestionList() {
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         footer={null}
-        width={700}
+        width="80%"
+        style={{ top: '10vh' }}
+        styles={{ body: { height: '75vh', overflow: 'auto' } }}
       >
-        <MDEditor.Markdown source={previewContent} />
+        <MarkdownView source={previewContent} />
       </Modal>
     </div>
   )
