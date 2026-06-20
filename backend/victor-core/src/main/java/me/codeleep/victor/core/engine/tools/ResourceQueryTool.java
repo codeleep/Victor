@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
-public class ResourceQueryTool {
+public class ResourceQueryTool implements AgentTool {
 
     private final Map<ResourceType, ResourceTypeHandler> handlerMap;
 

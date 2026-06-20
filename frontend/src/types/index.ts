@@ -40,7 +40,7 @@ export type InterviewReportStatus = 'PENDING' | 'EVALUATING' | 'COMPLETED' | 'FA
 
 export type RecallStrategy = 'VECTOR' | 'KEYWORD' | 'HYBRID'
 
-export type LlmProtocol = 'OPENAI' | 'CLAUDE' | 'QWEN' | 'DOUBAO'
+export type LlmProtocol = 'OPENAI' | 'CLAUDE' | 'QWEN' | 'VOLCENGINE'
 
 export type ModelType = 'INFERENCE' | 'EMBEDDING'
 
@@ -48,7 +48,7 @@ export type ResumeStatus = 'PENDING' | 'PARSED' | 'EMBEDDED'
 
 export type Speaker = 'AI' | 'USER' | 'CANDIDATE' | 'INTERVIEWER'
 
-export type VoiceServiceProvider = 'ALIYUN' | 'TENCENT' | 'QWEN' | 'DOUBAO' | 'AZURE' | 'OPENAI'
+export type VoiceServiceProvider = 'ALIYUN' | 'TENCENT' | 'QWEN' | 'VOLCENGINE' | 'AZURE' | 'OPENAI'
 
 // ==================== 用户相关 ====================
 

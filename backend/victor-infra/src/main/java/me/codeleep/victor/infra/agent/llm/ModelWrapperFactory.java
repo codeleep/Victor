@@ -39,7 +39,7 @@ public class ModelWrapperFactory {
         int maxTokens = llmDefinition.getMaxTokens();
 
         return switch (protocol) {
-            case DOUBAO -> new VolcengineModelWrapper(baseUrl, apiKey, modelName, temperature, maxTokens);
+            case VOLCENGINE -> new VolcengineModelWrapper(baseUrl, apiKey, modelName, temperature, maxTokens);
             case OPENAI, QWEN, CLAUDE -> throw new UnsupportedOperationException(
                     "暂未实现的 LLM 协议: " + protocol + "，请补充对应 ModelWrapper");
         };

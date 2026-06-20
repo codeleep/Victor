@@ -41,10 +41,10 @@ class AgentImportTest extends BaseApiTest {
         config.setUserId(USER_ID);
         config.setName("火山方舟推理模型");
         config.setDescription("火山方舟 Ark 编程推理模型");
-        config.setProvider("DOUBAO");
+        config.setProvider("VOLCENGINE");
         config.setApiEndpoint(env("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3"));
         config.setAuthParams(Map.of("apiKey", env("ARK_API_KEY", "")));
-        config.setProtocol(LlmProtocol.DOUBAO);
+        config.setProtocol(LlmProtocol.VOLCENGINE);
         config.setModelName(env("ARK_MODEL", "ark-code-latest"));
         config.setModelType(ModelType.INFERENCE);
         config.setTemperature(new BigDecimal("0.70"));

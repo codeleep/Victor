@@ -13,7 +13,7 @@ public enum VoiceServiceProvider {
     ALIYUN("ALIYUN", "阿里云"),
     TENCENT("TENCENT", "腾讯云"),
     QWEN("QWEN", "通义千问"),
-    DOUBAO("DOUBAO", "火山方舟"),
+    VOLCENGINE("VOLCENGINE", "火山方舟"),
     AZURE("AZURE", "Azure"),
     OPENAI("OPENAI", "OpenAI");
 

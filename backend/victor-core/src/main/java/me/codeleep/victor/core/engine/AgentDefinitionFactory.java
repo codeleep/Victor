@@ -9,6 +9,7 @@ import me.codeleep.victor.core.entity.Agent;
 import me.codeleep.victor.core.entity.AgentLlmConfig;
 import me.codeleep.victor.core.mapper.AgentLlmConfigMapper;
 import me.codeleep.victor.core.mapper.AgentMapper;
+import me.codeleep.victor.core.engine.tools.AgentTool;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -30,7 +31,7 @@ public class AgentDefinitionFactory {
     private final Map<String, Object> registeredTools = new ConcurrentHashMap<>();
 
     public AgentDefinitionFactory(AgentMapper agentMapper, AgentLlmConfigMapper agentLlmConfigMapper,
-                                   List<Object> tools) {
+                                   List<AgentTool> tools) {
         this.agentMapper = agentMapper;
         this.agentLlmConfigMapper = agentLlmConfigMapper;
         if (tools != null) {
@@ -92,7 +93,7 @@ public class AgentDefinitionFactory {
         if (llmConfig.getAuthParams() != null) {
             apiKey = (String) llmConfig.getAuthParams().getOrDefault("apiKey", "");
         }
-        LlmProtocol protocol = llmConfig.getProtocol() != null ? llmConfig.getProtocol() : LlmProtocol.DOUBAO;
+        LlmProtocol protocol = llmConfig.getProtocol() != null ? llmConfig.getProtocol() : LlmProtocol.VOLCENGINE;
 
         return LlmDefinition.builder()
                 .protocol(protocol)

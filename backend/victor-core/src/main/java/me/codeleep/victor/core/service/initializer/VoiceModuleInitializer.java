@@ -55,7 +55,7 @@ public class VoiceModuleInitializer implements ModuleInitializer {
         config.setUserId(userId);
         config.setName("火山引擎语音识别");
         config.setDescription("火山引擎 BigASR 语音识别服务");
-        config.setProvider(VoiceServiceProvider.DOUBAO);
+        config.setProvider(VoiceServiceProvider.VOLCENGINE);
         config.setApiEndpoint(env("VOLC_ASR_ENDPOINT", "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"));
         config.setAuthParams(Map.of("apiKey", env("VOLC_API_KEY", "")));
         config.setLanguage(env("VOLC_ASR_VOICE", "zh-CN"));
@@ -83,7 +83,7 @@ public class VoiceModuleInitializer implements ModuleInitializer {
         config.setUserId(userId);
         config.setName("火山引擎语音合成");
         config.setDescription("火山引擎双向TTS语音合成服务");
-        config.setProvider(VoiceServiceProvider.DOUBAO);
+        config.setProvider(VoiceServiceProvider.VOLCENGINE);
         config.setApiEndpoint(env("VOLC_TTS_ENDPOINT", "wss://openspeech.bytedance.com/api/v3/tts/bidirection"));
         config.setAuthParams(Map.of("apiKey", env("VOLC_API_KEY", "")));
         config.setExtraParams(Map.of(

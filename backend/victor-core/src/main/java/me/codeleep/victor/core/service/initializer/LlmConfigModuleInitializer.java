@@ -40,10 +40,10 @@ public class LlmConfigModuleInitializer implements ModuleInitializer {
             config.setUserId(userId);
             config.setName("火山方舟默认LLM配置");
             config.setDescription("系统初始化创建的默认火山方舟 LLM 配置");
-            config.setProvider("DOUBAO");
+            config.setProvider("VOLCENGINE");
             config.setApiEndpoint(env("ARK_API_ENDPOINT", "https://ark.cn-beijing.volces.com/api/coding/v3"));
             config.setAuthParams(Map.of("apiKey", env("ARK_API_KEY", "")));
-            config.setProtocol(LlmProtocol.DOUBAO);
+            config.setProtocol(LlmProtocol.VOLCENGINE);
             config.setModelName(env("ARK_MODEL_NAME", "ark-code-latest"));
             config.setModelType(ModelType.INFERENCE);
             config.setTemperature(new BigDecimal("0.70"));

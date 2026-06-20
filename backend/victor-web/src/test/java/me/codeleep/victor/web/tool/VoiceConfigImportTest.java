@@ -46,7 +46,7 @@ class VoiceConfigImportTest extends BaseApiTest {
         asr.setUserId(USER_ID);
         asr.setName("火山引擎语音识别");
         asr.setDescription("火山引擎 BigASR 语音识别服务");
-        asr.setProvider(VoiceServiceProvider.DOUBAO);
+        asr.setProvider(VoiceServiceProvider.VOLCENGINE);
         asr.setApiEndpoint(env("VOLC_ASR_ENDPOINT", "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"));
         asr.setAuthParams(Map.of("apiKey", apiKey));
         asr.setExtraParams(Map.of(
@@ -63,7 +63,7 @@ class VoiceConfigImportTest extends BaseApiTest {
         tts.setUserId(USER_ID);
         tts.setName("火山引擎语音合成");
         tts.setDescription("火山引擎双向TTS语音合成服务");
-        tts.setProvider(VoiceServiceProvider.DOUBAO);
+        tts.setProvider(VoiceServiceProvider.VOLCENGINE);
         tts.setApiEndpoint(env("VOLC_TTS_ENDPOINT", "wss://openspeech.bytedance.com/api/v3/tts/bidirection"));
         tts.setAuthParams(Map.of("apiKey", apiKey));
         tts.setExtraParams(Map.of(

@@ -344,7 +344,7 @@ function LlmPanel() {
           <Form.Item name="apiEndpoint" label="API 端点" rules={[{ required: true }]}><Input placeholder="请输入 API 端点" /></Form.Item>
           <Form.Item name="apiKey" label="API Key"><Input.Password placeholder="请输入 API Key" /></Form.Item>
           <Form.Item name="protocol" label="协议" rules={[{ required: true }]}>
-            <Select options={[{ label: 'OpenAI', value: 'OPENAI' }, { label: 'Claude', value: 'CLAUDE' }, { label: '通义千问', value: 'QWEN' }, { label: '豆包', value: 'DOUBAO' }]} />
+            <Select options={[{ label: 'OpenAI', value: 'OPENAI' }, { label: 'Claude', value: 'CLAUDE' }, { label: '通义千问', value: 'QWEN' }, { label: '火山方舟', value: 'VOLCENGINE' }]} />
           </Form.Item>
           <Form.Item name="modelName" label="模型名称" rules={[{ required: true }]}><Input placeholder="如: gpt-4, claude-3-opus" /></Form.Item>
           <Form.Item name="modelType" label="模型类型">

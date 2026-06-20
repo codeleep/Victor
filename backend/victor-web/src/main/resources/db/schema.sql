@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS interview_report CASCADE;
 DROP TABLE IF EXISTS interview_question CASCADE;
 DROP TABLE IF EXISTS interview_config CASCADE;
 DROP TABLE IF EXISTS agent_team_member CASCADE;
+DROP TABLE IF EXISTS agent_memory CASCADE;
 DROP TABLE IF EXISTS agent_team CASCADE;
 DROP TABLE IF EXISTS agent CASCADE;
 DROP TABLE IF EXISTS agent_llm_config CASCADE;
@@ -278,6 +279,20 @@ CREATE TABLE agent_team_member (
 
 CREATE INDEX idx_team_member_team_id ON agent_team_member (team_id);
 CREATE INDEX idx_team_member_agent_id ON agent_team_member (agent_id);
+
+CREATE TABLE agent_memory (
+    id BIGSERIAL PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    session_id VARCHAR(128) NOT NULL,
+    state_key VARCHAR(255) NOT NULL,
+    state_json TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, session_id, state_key)
+);
+
+CREATE INDEX idx_agent_memory_user_id ON agent_memory (user_id);
+CREATE INDEX idx_agent_memory_user_session ON agent_memory (user_id, session_id);
 
 -- =====================================================
 -- 5. 面试模块
