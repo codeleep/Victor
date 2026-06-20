@@ -65,8 +65,8 @@ public class MetadataServiceImpl extends ServiceImpl<MetadataMapper, Metadata> i
                .like(StringUtils.hasText(request.getCode()), Metadata::getCode, request.getCode())
                .like(StringUtils.hasText(request.getName()), Metadata::getName, request.getName())
                .eq(request.getIsActive() != null, Metadata::getIsActive, request.getIsActive())
-               .orderByAsc(Metadata::getCategory)
-               .orderByAsc(Metadata::getSortOrder);
+               .orderByDesc(Metadata::getId)
+               .orderByAsc(Metadata::getCategory);
 
         Page<Metadata> result = page(page, wrapper);
 

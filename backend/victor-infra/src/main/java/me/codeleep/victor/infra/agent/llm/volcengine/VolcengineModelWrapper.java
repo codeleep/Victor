@@ -14,6 +14,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -171,11 +172,25 @@ public class VolcengineModelWrapper implements Model {
                 }
                 arkMessages.add(m);
             } else if (role == MsgRole.TOOL) {
-                // 工具结果消息：AgentScope 中工具结果以 ToolResultBlock 形式存在于消息内容里
-                ChatMessage m = new ChatMessage();
-                m.setRole(ChatMessageRole.TOOL);
-                m.setContent(text);
-                arkMessages.add(m);
+                // 工具结果消息：AgentScope 中工具结果以 ToolResultBlock 形式存在于消息内容里。
+                // Ark/OpenAI 协议要求 role=tool 的消息必须带 tool_call_id，关联到对应的 assistant tool_call。
+                List<ToolResultBlock> results = msg.getContentBlocks(ToolResultBlock.class);
+                if (results != null && !results.isEmpty()) {
+                    for (ToolResultBlock tr : results) {
+                        ChatMessage m = new ChatMessage();
+                        m.setRole(ChatMessageRole.TOOL);
+                        m.setToolCallId(tr.getId() != null ? tr.getId() : "");
+                        m.setContent(extractToolResultText(tr));
+                        arkMessages.add(m);
+                    }
+                } else {
+                    // 退化：无 ToolResultBlock 时按纯文本工具结果处理（tool_call_id 缺失可能被服务端拒绝）
+                    ChatMessage m = new ChatMessage();
+                    m.setRole(ChatMessageRole.TOOL);
+                    m.setToolCallId("");
+                    m.setContent(text);
+                    arkMessages.add(m);
+                }
             }
         }
         return arkMessages;
@@ -202,6 +217,24 @@ public class VolcengineModelWrapper implements Model {
     }
 
     /**
+     * 提取 ToolResultBlock 的文本输出，拼成工具结果内容字符串
+     */
+    private String extractToolResultText(ToolResultBlock tr) {
+        if (tr.getOutput() == null || tr.getOutput().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (ContentBlock b : tr.getOutput()) {
+            if (b instanceof TextBlock tb) {
+                sb.append(tb.getText());
+            } else {
+                sb.append(b.toString());
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
      * 将流式 chunk 转换为 AgentScope ChatResponse
      */
     private ChatResponse convertChunk(ChatCompletionChunk chunk, StringBuilder textBuf) {
@@ -223,15 +256,19 @@ public class VolcengineModelWrapper implements Model {
         }
 
         // 工具调用增量
+        // 注意：流式工具调用是分段的，首个 chunk 可能只有 id 而函数名为空；
+        // AgentScope 的 emitBlockEvents 会对 name 调用 putIfAbsent（ConcurrentHashMap 不允许 null value），
+        // 因此 id/name 必须为非 null（用空串占位），由 ReasoningContext 在后续 chunk 累积补全。
         if (delta != null && delta.getToolCalls() != null && !delta.getToolCalls().isEmpty()) {
             for (ChatToolCall tc : delta.getToolCalls()) {
                 Map<String, Object> input = new HashMap<>();
+                String fnName = tc.getFunction() != null ? tc.getFunction().getName() : null;
                 if (tc.getFunction() != null && tc.getFunction().getArguments() != null) {
                     input = parseArgs(tc.getFunction().getArguments());
                 }
                 ToolUseBlock tub = ToolUseBlock.builder()
                         .id(tc.getId() != null ? tc.getId() : "")
-                        .name(tc.getFunction() != null ? tc.getFunction().getName() : "")
+                        .name(fnName != null ? fnName : "")
                         .input(input)
                         .build();
                 blocks.add(tub);
