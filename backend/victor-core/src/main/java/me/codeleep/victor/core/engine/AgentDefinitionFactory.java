@@ -9,7 +9,6 @@ import me.codeleep.victor.core.entity.Agent;
 import me.codeleep.victor.core.entity.AgentLlmConfig;
 import me.codeleep.victor.core.mapper.AgentLlmConfigMapper;
 import me.codeleep.victor.core.mapper.AgentMapper;
-import me.codeleep.victor.core.engine.tools.AgentTool;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -30,17 +29,15 @@ public class AgentDefinitionFactory {
     /** 工具名(@Tool name) -> 工具实例 */
     private final Map<String, Object> registeredTools = new ConcurrentHashMap<>();
 
-    public AgentDefinitionFactory(AgentMapper agentMapper, AgentLlmConfigMapper agentLlmConfigMapper,
-                                   List<AgentTool> tools) {
+    public AgentDefinitionFactory(AgentMapper agentMapper, AgentLlmConfigMapper agentLlmConfigMapper) {
         this.agentMapper = agentMapper;
         this.agentLlmConfigMapper = agentLlmConfigMapper;
-        if (tools != null) {
-            tools.forEach(this::registerTool);
-        }
     }
 
-    /**
-     * 注册工具（读取 @io.agentscope.core.tool.Tool 注解的 name 作为键）
+
+/**
+     * 注册工具（由各 AgentTool 实现在容器就绪后自调用）。
+     * 读取 @io.agentscope.core.tool.Tool 注解的 name 作为键。
      */
     public void registerTool(Object tool) {
         for (java.lang.reflect.Method method : tool.getClass().getMethods()) {
