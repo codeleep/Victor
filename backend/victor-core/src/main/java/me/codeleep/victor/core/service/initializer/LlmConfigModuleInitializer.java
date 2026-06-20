@@ -53,6 +53,9 @@ public class LlmConfigModuleInitializer implements ModuleInitializer {
             agentLlmConfigMapper.insert(config);
             llmCreated = 1;
             log.info("[LlmInit] 创建默认LLM配置: id={}", config.getId());
+        } else if (migrateLegacyDoubao(existing)) {
+            llmCreated = 1;
+            log.info("[LlmInit] 修正旧 DOUBAO 配置为 VOLCENGINE: id={}", existing.getId());
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -60,6 +63,27 @@ public class LlmConfigModuleInitializer implements ModuleInitializer {
         return result;
     }
 
+    /**
+     * 修正历史遗留的 DOUBAO 协议/提供商值为 VOLCENGINE。
+     * 枚举已从 DOUBAO 改名为 VOLCENGINE，若库里仍存旧值会导致 MyBatis EnumTypeHandler 反序列化失败。
+     *
+     * @return 是否发生了修正
+     */
+    private boolean migrateLegacyDoubao(AgentLlmConfig existing) {
+        boolean changed = false;
+        if (existing.getProtocol() != null && "DOUBAO".equals(existing.getProtocol().name())) {
+            existing.setProtocol(LlmProtocol.VOLCENGINE);
+            changed = true;
+        }
+        if ("DOUBAO".equals(existing.getProvider())) {
+            existing.setProvider("VOLCENGINE");
+            changed = true;
+        }
+        if (changed) {
+            agentLlmConfigMapper.updateById(existing);
+        }
+        return changed;
+    }
     private String env(String name, String fallback) {
         String value = System.getenv(name);
         return value != null && !value.isBlank() ? value : fallback;

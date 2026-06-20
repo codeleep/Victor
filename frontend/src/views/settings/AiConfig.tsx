@@ -297,8 +297,17 @@ function LlmPanel() {
   const handleDelete = async (id: number) => {
     try { await agentLlmConfigApi.delete(id); message.success('删除成功'); loadConfigs() } catch (e) { console.error(e) }
   }
+  const [testing, setTesting] = useState<number | null>(null)
   const handleTest = async (id: number) => {
-    try { await agentLlmConfigApi.testConnection(id); message.success('连接成功') } catch (e) { /* interceptor 已显示错误 */ }
+    setTesting(id)
+    try {
+      await agentLlmConfigApi.testConnection(id)
+      message.success('连接成功')
+    } catch (e) {
+      message.error('连接测试失败')
+    } finally {
+      setTesting(null)
+    }
   }
   const handleSetDefault = async (id: number) => {
     try { await agentLlmConfigApi.setDefault(id); message.success('已设为默认'); loadConfigs() } catch (e) { console.error(e) }
@@ -320,7 +329,7 @@ function LlmPanel() {
       title: '操作', key: 'action', width: 260,
       render: (_: unknown, r: AgentLlmConfigVO) => (
         <Space>
-          <Button type="link" onClick={() => handleTest(r.id)}>测试</Button>
+          <Button type="link" loading={testing === r.id} onClick={() => handleTest(r.id)}>测试</Button>
           {!r.isDefault && <Button type="link" onClick={() => handleSetDefault(r.id)}>设为默认</Button>}
           <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(r)}>编辑</Button>
           <Popconfirm title="确定删除？" onConfirm={() => handleDelete(r.id)}>
