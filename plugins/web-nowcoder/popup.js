@@ -1,152 +1,208 @@
 const DEFAULTS = {
   victorBaseUrl: 'http://localhost:8080',
-  authType: 'apiKey',
   victorApiKey: '',
-  victorToken: '',
-  questionDelay: 1500,
+  questionDelay: 300,
   includeSource: true,
-};
-
-const fields = ['victorBaseUrl', 'authType', 'victorApiKey', 'victorToken', 'questionDelay', 'includeSource'];
-const statusEl = document.getElementById('status');
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
-const autoFillTokenBtn = document.getElementById('autoFillToken');
-const jwtTokenSection = document.getElementById('jwtTokenSection');
-
-function setStatus(text) {
-  statusEl.textContent = text;
 }
 
-function updateAuthTypeUI(authType) {
-  jwtTokenSection.style.display = authType === 'jwt' ? 'block' : 'none';
-}
-
-async function getActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab;
-}
-
-async function loadOptions() {
-  const saved = await chrome.storage.local.get(DEFAULTS);
-  for (const field of fields) {
-    if (field === 'authType') {
-      const radio = document.querySelector(`input[name="authType"][value="${saved[field]}"]`);
-      if (radio) radio.checked = true;
-      updateAuthTypeUI(saved[field]);
-      continue;
-    }
-
-    const el = document.getElementById(field);
-    if (!el) continue;
-    if (el.type === 'checkbox') {
-      el.checked = Boolean(saved[field]);
-    } else {
-      el.value = saved[field];
-    }
-  }
-}
-
-async function saveOptions() {
-  const options = {};
-  for (const field of fields) {
-    if (field === 'authType') {
-      options[field] = document.querySelector('input[name="authType"]:checked')?.value || 'apiKey';
-      continue;
-    }
-
-    const el = document.getElementById(field);
-    if (!el) continue;
-    if (el.type === 'checkbox') {
-      options[field] = el.checked;
-    } else if (el.type === 'number') {
-      options[field] = Number(el.value);
-    } else {
-      options[field] = el.value.trim();
-    }
-  }
-  await chrome.storage.local.set(options);
-  return options;
-}
-
-async function sendToContent(message) {
-  const tab = await getActiveTab();
-  if (!tab?.id) throw new Error('找不到当前标签页');
-  if (!String(tab.url || '').includes('nowcoder.com')) {
-    throw new Error('请先打开牛客网页面（面试题或面经）');
-  }
-  return chrome.tabs.sendMessage(tab.id, message);
-}
-
-async function autoFillVictorToken() {
-  const tabs = await chrome.tabs.query({ url: ['http://localhost:8080/*', 'http://127.0.0.1:8080/*', 'http://localhost:5173/*'] });
-  for (const tab of tabs) {
-    if (!tab.id) continue;
-    try {
-      const [result] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => localStorage.getItem('token') || '',
-      });
-      const token = String(result?.result || '').trim();
-      if (token) {
-        document.getElementById('victorToken').value = token;
-        setStatus('已从 Victor 页面自动获取 Token');
-        return;
-      }
-    } catch (e) {
-      console.log('Could not get token from tab:', e);
-    }
-  }
-  setStatus('未找到已登录的 Victor 页面，请先登录 Victor');
-}
+const statusEl = document.getElementById('status')
+const startBtn = document.getElementById('startBtn')
+const stopBtn = document.getElementById('stopBtn')
+let stopRequested = false
 
 startBtn.addEventListener('click', async () => {
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-  setStatus('正在启动...');
+  startBtn.disabled = true
+  stopBtn.disabled = false
+  stopRequested = false
+  setStatus('正在解析...')
+
   try {
-    const options = await saveOptions();
-    if (!options.victorBaseUrl) throw new Error('请填写 Victor 后端地址');
-    if (options.authType === 'apiKey' && !options.victorApiKey) throw new Error('请填写 Victor API Key');
-    if (options.authType === 'jwt' && !options.victorToken) throw new Error('请填写 Victor Token 或点击"自动获取"');
-    const response = await sendToContent({ type: 'START_SCRAPING', options });
-    setStatus(response?.message || '任务已启动，请查看页面控制台或进度');
+    const options = await getOptions()
+    if (!options.victorBaseUrl) throw new Error('请填写 Victor 后端地址')
+    if (!options.victorApiKey) throw new Error('请填写 Victor API Key')
+
+    const jsonStr = document.getElementById('questionData').value.trim()
+    if (!jsonStr) throw new Error('请先粘贴题目数据 JSON')
+
+    const data = JSON.parse(jsonStr)
+    const questions = findQuestionList(data)
+
+    if (!questions || questions.length === 0) {
+      throw new Error('未找到题目数据，请确认粘贴的是 window.__INITIAL_STATE__ 的内容')
+    }
+
+    setStatus(`解析成功，共 ${questions.length} 道题，开始上传...`)
+    await uploadAll(questions, options)
+
   } catch (error) {
-    setStatus(`启动失败：${error.message}`);
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
+    setStatus(`失败: ${error.message}`)
+    startBtn.disabled = false
+    stopBtn.disabled = true
   }
-});
+})
 
-stopBtn.addEventListener('click', async () => {
-  try {
-    const response = await sendToContent({ type: 'STOP_SCRAPING' });
-    setStatus(response?.message || '已发送停止指令');
-  } catch (error) {
-    setStatus(`停止失败：${error.message}`);
-  } finally {
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
+stopBtn.addEventListener('click', () => {
+  stopRequested = true
+  setStatus('已发送停止指令')
+  startBtn.disabled = false
+  stopBtn.disabled = true
+})
+
+async function getOptions() {
+  const saved = await chrome.storage.local.get(DEFAULTS)
+  return {
+    victorBaseUrl: document.getElementById('victorBaseUrl').value || saved.victorBaseUrl,
+    victorApiKey: document.getElementById('victorApiKey').value || saved.victorApiKey,
+    includeSource: document.getElementById('includeSource').checked,
+    questionDelay: 300,
   }
-});
+}
 
-autoFillTokenBtn.addEventListener('click', (e) => {
-  e.preventDefault();
-  autoFillVictorToken();
-});
+function findQuestionList(obj) {
+  if (!obj || typeof obj !== 'object') return null
 
-document.querySelectorAll('input[name="authType"]').forEach((radio) => {
-  radio.addEventListener('change', (event) => updateAuthTypeUI(event.target.value));
-});
+  const visited = new WeakSet()
+  let result = null
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === 'SCRAPING_STATUS') {
-    setStatus(message.text);
-    if (message.done) {
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
+  function search(o) {
+    if (!o || typeof o !== 'object' || visited.has(o)) return
+    visited.add(o)
+
+    if (Array.isArray(o) && o.length > 0 && o.some(x => x && (x.title || x.content || x.questionTitle || x.referenceAnswer))) {
+      result = o
+      return
+    }
+
+    for (const [k, v] of Object.entries(o)) {
+      if (k === 'questionList' && Array.isArray(v) && v.length > 0) {
+        result = v
+        return
+      }
+      if (v && typeof v === 'object') {
+        search(v)
+        if (result) return
+      }
     }
   }
-});
 
-loadOptions().catch((error) => setStatus(`初始化失败：${error.message}`));
+  search(obj)
+  return result
+}
+
+async function uploadAll(questions, options) {
+  let imported = 0
+  let failed = 0
+  const errors = []
+
+  for (let i = 0; i < questions.length; i++) {
+    if (stopRequested) break
+
+    const q = questions[i]
+    setStatus(`正在上传第 ${i + 1}/${questions.length} 题...`)
+
+    try {
+      const payload = buildPayload(q, options, i)
+      const response = await uploadOne(options, payload)
+      if (response?.ok) {
+        imported++
+      } else {
+        failed++
+        errors.push(`${i + 1}. ${response?.error || '未知错误'}`)
+      }
+
+      if (i < questions.length - 1) {
+        await sleep(options.questionDelay)
+      }
+    } catch (error) {
+      failed++
+      errors.push(`${i + 1}. ${error.message}`)
+    }
+  }
+
+  const summary = `完成！成功上传 ${imported} 题，失败 ${failed} 题`
+  const statusText = errors.length > 0
+    ? `${summary}\n\n错误详情：\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...还有更多' : ''}`
+    : summary
+
+  setStatus(statusText)
+  startBtn.disabled = false
+  stopBtn.disabled = true
+}
+
+function buildPayload(q, options, index) {
+  const title = q.title || q.questionTitle || q.content?.slice(0, 100) || `题目 ${index + 1}`
+  const content = q.content || q.questionContent || q.questionDesc || title
+  const answer = q.referenceAnswer || q.answer || q.solution || q.explanation || ''
+
+  const descriptionParts = []
+  if (options.includeSource) {
+    descriptionParts.push('来源：牛客网')
+  }
+  descriptionParts.push(content)
+
+  return {
+    title: title.slice(0, 200),
+    description: descriptionParts.join('\n'),
+    type: 'TECHNICAL',
+    difficulty: 'MEDIUM',
+    tags: ['牛客网', '面试题'],
+    referenceAnswer: answer,
+  }
+}
+
+async function uploadOne(options, payload) {
+  const baseUrl = options.victorBaseUrl.replace(/\/+$/, '')
+  const url = `${baseUrl}/api/v1/questions`
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': options.victorApiKey,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const text = await res.text()
+  let json
+  try {
+    json = JSON.parse(text)
+  } catch {
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`)
+  }
+
+  if (json.code !== 200 && json.code !== 0) {
+    throw new Error(json.message || `HTTP ${res.status}`)
+  }
+
+  return { ok: true, data: json.data }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function setStatus(text) {
+  statusEl.textContent = text
+}
+
+async function init() {
+  const saved = await chrome.storage.local.get(DEFAULTS)
+  document.getElementById('victorBaseUrl').value = saved.victorBaseUrl
+  document.getElementById('victorApiKey').value = saved.victorApiKey
+  document.getElementById('includeSource').checked = saved.includeSource
+
+  // 自动保存输入的内容
+  Array.from(document.querySelectorAll('input, textarea')).forEach(el => {
+    el.addEventListener('change', async () => {
+      const options = {
+        victorBaseUrl: document.getElementById('victorBaseUrl').value,
+        victorApiKey: document.getElementById('victorApiKey').value,
+        includeSource: document.getElementById('includeSource').checked,
+      }
+      await chrome.storage.local.set(options)
+    })
+  })
+}
+
+init().catch(e => console.error('初始化失败:', e))
