@@ -8,7 +8,8 @@ import me.codeleep.victor.infra.agent.StructuredJsonParser;
 import me.codeleep.victor.infra.agent.core.AgentContext;
 import me.codeleep.victor.infra.agent.core.AgentResult;
 import me.codeleep.victor.infra.agent.core.AgentTeamDefinition;
-import me.codeleep.victor.infra.agent.runner.AgentTeamRunner;
+import me.codeleep.victor.infra.agent.runner.AgentFactory;
+import me.codeleep.victor.infra.agent.runner.AgentRunner;
 import me.codeleep.victor.common.enums.InterviewReportStatus;
 import me.codeleep.victor.common.enums.Speaker;
 import me.codeleep.victor.common.exception.BusinessException;
@@ -40,7 +41,8 @@ public class ReportServiceImpl implements ReportService {
     private final InterviewConfigMapper interviewConfigMapper;
     private final JobMapper jobMapper;
     private final AgentTeamMapper agentTeamMapper;
-    private final AgentTeamRunner teamRunner;
+    private final AgentFactory agentFactory;
+    private final AgentRunner agentRunner;
     private final AgentTeamDefinitionFactory teamDefinitionFactory;
     private final InterviewReportConverter reportConverter;
 
@@ -101,7 +103,7 @@ public class ReportServiceImpl implements ReportService {
                 ## 完整对话记录
                 %s
                 """, jobName, totalQuestions, conversationHistory);
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         // 获取评估团队
         AgentTeamDefinition team = getTeamOrThrow(config);
@@ -112,7 +114,7 @@ public class ReportServiceImpl implements ReportService {
         report.setEvaluationRetryCount(0);
 
         try {
-            AgentResult result = teamRunner.run(team, context);
+            AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
 
             if (result.isSuccess() && result.getContent() != null) {
                 Map<String, Object> evaluation = parseReportJson(result.getContent());

@@ -2,6 +2,7 @@ package me.codeleep.victor.core.engine;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.codeleep.victor.common.enums.TeamExecutionMode;
 import me.codeleep.victor.core.dto.TeamMemberInfo;
 import me.codeleep.victor.core.entity.AgentTeam;
 import me.codeleep.victor.infra.agent.core.AgentDefinition;
@@ -34,18 +35,15 @@ public class AgentTeamDefinitionFactory {
             return null;
         }
 
-        // 1. 构建主 Agent 定义
         AgentDefinition mainDef = agentDefinitionFactory.build(team.getMainAgentId());
         if (mainDef == null) {
             log.error("主 Agent 定义构建失败: mainAgentId={}", team.getMainAgentId());
             return null;
         }
 
-        // 2. 构建子 Agent 定义
         List<AgentTeamDefinition.SubAgentEntry> subAgents = new ArrayList<>();
         if (team.getMembers() != null) {
             for (TeamMemberInfo member : team.getMembers()) {
-                // 跳过主 Agent
                 if (member.getAgentId() != null && member.getAgentId().equals(team.getMainAgentId())) {
                     continue;
                 }
@@ -68,7 +66,7 @@ public class AgentTeamDefinitionFactory {
         return AgentTeamDefinition.builder()
                 .key(team.getKey())
                 .name(team.getName())
-                .executionMode(team.getExecutionMode() != null ? team.getExecutionMode().name() : "SEQUENTIAL")
+                .executionMode(team.getExecutionMode() != null ? team.getExecutionMode() : TeamExecutionMode.SEQUENTIAL)
                 .mainAgent(mainDef)
                 .subAgents(subAgents)
                 .build();

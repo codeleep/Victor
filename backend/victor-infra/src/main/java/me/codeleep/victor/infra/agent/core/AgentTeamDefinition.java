@@ -2,13 +2,14 @@ package me.codeleep.victor.infra.agent.core;
 
 import lombok.Builder;
 import lombok.Data;
+import lombok.Singular;
+import me.codeleep.victor.common.enums.TeamExecutionMode;
 
 import java.util.List;
 
 /**
  * Agent 团队运行时定义 - 不可变配置
- * 对应数据库中的 AgentTeam 实体，由工厂转换而来
- * 与 AgentDefinition 平级，解耦 infra 对 core 实体的依赖
+ * 主 Agent 通过 SubAgentTool 把子 Agent 编排为可调用工具
  */
 @Data
 @Builder(toBuilder = true)
@@ -25,9 +26,11 @@ public class AgentTeamDefinition {
     private String name;
 
     /**
-     * 执行模式：SEQUENTIAL / PARALLEL
+     * 执行模式：主 Agent 可通过 ReAct 决定调用子 Agent；
+     * PARALLEL 允许并行调用多个子 Agent，SEQUENTIAL 由主 Agent 串行决策
      */
-    private String executionMode;
+    @Builder.Default
+    private TeamExecutionMode executionMode = TeamExecutionMode.SEQUENTIAL;
 
     /**
      * 主 Agent 定义
@@ -37,8 +40,8 @@ public class AgentTeamDefinition {
     /**
      * 子 Agent 定义列表（不含主 Agent）
      */
-    @Builder.Default
-    private List<SubAgentEntry> subAgents = List.of();
+    @Singular
+    private List<SubAgentEntry> subAgents;
 
     /**
      * 子 Agent 条目

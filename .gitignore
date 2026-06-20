@@ -31,3 +31,6 @@ victor-pgdata/
 # Frontend generated config output
 frontend/vite.config.js
 frontend/vite.config.d.ts
+
+# Logs directory
+logs/

@@ -9,7 +9,9 @@ import me.codeleep.victor.infra.agent.StructuredJsonParser;
 import me.codeleep.victor.infra.agent.core.AgentContext;
 import me.codeleep.victor.infra.agent.core.AgentResult;
 import me.codeleep.victor.infra.agent.core.AgentTeamDefinition;
-import me.codeleep.victor.infra.agent.runner.AgentTeamRunner;
+import me.codeleep.victor.infra.agent.runner.AgentFactory;
+import me.codeleep.victor.infra.agent.runner.AgentRunner;
+import io.agentscope.core.ReActAgent;
 import me.codeleep.victor.common.enums.Speaker;
 import me.codeleep.victor.common.exception.BusinessException;
 import me.codeleep.victor.common.result.ResultCode;
@@ -30,7 +32,8 @@ import java.util.*;
 @RequiredArgsConstructor
 public class InterviewEngineImpl implements InterviewEngine {
 
-    private final AgentTeamRunner teamRunner;
+    private final AgentFactory agentFactory;
+    private final AgentRunner agentRunner;
     private final AgentTeamDefinitionFactory teamDefinitionFactory;
     private final InterviewConfigMapper configMapper;
     private final InterviewTurnMapper turnMapper;
@@ -39,6 +42,7 @@ public class InterviewEngineImpl implements InterviewEngine {
     private final JobMapper jobMapper;
     private final ResumeMapper resumeMapper;
     private final ObjectMapper objectMapper;
+    private final InterviewContextBuilder contextBuilder;
     private final StructuredJsonParser<EvaluationResult> evaluationParser = new StructuredJsonParser<>(EvaluationResult.class);
 
     // ==================== 出题（配置级批量生成） ====================
@@ -70,14 +74,14 @@ public class InterviewEngineImpl implements InterviewEngine {
                 %s
                 """,
                 questionCount,
-                formatJob(job),
-                formatResume(resume),
+                contextBuilder.formatJob(job),
+                contextBuilder.formatResume(resume),
                 config.getRounds() != null ? config.getRounds().toString() : "[]",
                 config.getRecallItems() != null ? config.getRecallItems().toString() : "[]");
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "question");
-        AgentResult result = teamRunner.run(team, context);
+        AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成面试题失败: " + result.getErrorMessage());
         }
@@ -100,11 +104,11 @@ public class InterviewEngineImpl implements InterviewEngine {
         AgentContext context = buildAgentContext(config);
 
         String userMsg = String.format("请为候选人生成一道面试题目。\n岗位: %s\n简历: %s\n历史对话:\n%s",
-                formatJobBrief(job), formatResumeBrief(resume), getConversationHistory(sessionId));
-        context.addUserMessage(userMsg);
+                contextBuilder.formatJobBrief(job), contextBuilder.formatResumeBrief(resume), getConversationHistory(sessionId));
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "interview");
-        AgentResult result = teamRunner.run(team, context);
+        AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成题目失败: " + result.getErrorMessage());
         }
@@ -121,12 +125,12 @@ public class InterviewEngineImpl implements InterviewEngine {
         AgentContext context = buildAgentContext(config);
 
         String userMsg = String.format("请为候选人生成一道面试题目。\n岗位: %s\n简历: %s\n历史对话:\n%s",
-                formatJobBrief(job), formatResumeBrief(resume), getConversationHistory(sessionId));
-        context.addUserMessage(userMsg);
+                contextBuilder.formatJobBrief(job), contextBuilder.formatResumeBrief(resume), getConversationHistory(sessionId));
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "interview");
         StringBuilder contentBuilder = new StringBuilder();
-        return teamRunner.streamRun(team, context)
+        return agentRunner.streamRun(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context)
                 .map(result -> {
                     if (result.getContent() != null) {
                         contentBuilder.append(result.getContent());
@@ -150,10 +154,10 @@ public class InterviewEngineImpl implements InterviewEngine {
 
         String userMsg = String.format("请评估候选人的回答。\n岗位: %s\n当前题目: %s\n候选人回答: %s",
                 job != null ? job.getName() : "通用岗位", currentQuestion, answer);
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "evaluation");
-        AgentResult result = teamRunner.run(team, context);
+        AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "评估回答失败: " + result.getErrorMessage());
         }
@@ -170,10 +174,10 @@ public class InterviewEngineImpl implements InterviewEngine {
 
         String userMsg = String.format("请评估候选人的回答。\n岗位: %s\n当前题目: %s\n候选人回答: %s",
                 job != null ? job.getName() : "通用岗位", currentQuestion, answer);
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "evaluation");
-        return teamRunner.streamRun(team, context)
+        return agentRunner.streamRun(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context)
                 .map(result -> result.getContent() != null ? result.getContent() : "");
     }
 
@@ -189,10 +193,10 @@ public class InterviewEngineImpl implements InterviewEngine {
 
         String userMsg = String.format("候选人对上一个问题的回答不够完整，请生成一个追问。\n岗位: %s\n原问题: %s\n候选人回答: %s",
                 job != null ? job.getName() : "通用岗位", currentQuestion, previousAnswer);
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "interview");
-        AgentResult result = teamRunner.run(team, context);
+        AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成追问失败: " + result.getErrorMessage());
         }
@@ -210,11 +214,11 @@ public class InterviewEngineImpl implements InterviewEngine {
 
         String userMsg = String.format("候选人对上一个问题的回答不够完整，请生成一个追问。\n岗位: %s\n原问题: %s\n候选人回答: %s",
                 job != null ? job.getName() : "通用岗位", currentQuestion, previousAnswer);
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "interview");
         StringBuilder contentBuilder = new StringBuilder();
-        return teamRunner.streamRun(team, context)
+        return agentRunner.streamRun(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context)
                 .map(result -> {
                     if (result.getContent() != null) {
                         contentBuilder.append(result.getContent());
@@ -235,10 +239,10 @@ public class InterviewEngineImpl implements InterviewEngine {
         AgentContext context = buildAgentContext(config);
 
         String userMsg = String.format("候选人请求提示，请为以下题目生成一个不直接给出答案的提示。\n当前题目: %s", currentQuestion);
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "interview");
-        AgentResult result = teamRunner.run(team, context);
+        AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成提示失败: " + result.getErrorMessage());
         }
@@ -253,11 +257,11 @@ public class InterviewEngineImpl implements InterviewEngine {
         AgentContext context = buildAgentContext(config);
 
         String userMsg = String.format("候选人请求提示，请为以下题目生成一个不直接给出答案的提示。\n当前题目: %s", currentQuestion);
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "interview");
         StringBuilder contentBuilder = new StringBuilder();
-        return teamRunner.streamRun(team, context)
+        return agentRunner.streamRun(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context)
                 .map(result -> {
                     if (result.getContent() != null) {
                         contentBuilder.append(result.getContent());
@@ -290,10 +294,10 @@ public class InterviewEngineImpl implements InterviewEngine {
 
         String userMsg = String.format("面试已结束，请生成面试总结报告。\n岗位: %s\n总题目数: %d\n完整对话记录:\n%s",
                 job != null ? job.getName() : "通用岗位", totalQuestions, conversationHistory);
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "evaluation");
-        AgentResult result = teamRunner.run(team, context);
+        AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成总结失败: " + result.getErrorMessage());
         }
@@ -319,10 +323,10 @@ public class InterviewEngineImpl implements InterviewEngine {
 
         String userMsg = String.format("面试已结束，请生成面试总结报告。\n岗位: %s\n总题目数: %d\n完整对话记录:\n%s",
                 job != null ? job.getName() : "通用岗位", totalQuestions, conversationHistory);
-        context.addUserMessage(userMsg);
+        context.setInput(userMsg);
 
         AgentTeamDefinition team = getTeamByRoleOrThrow(config, "evaluation");
-        return teamRunner.streamRun(team, context)
+        return agentRunner.streamRun(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context)
                 .map(result -> result.getContent() != null ? result.getContent() : "");
     }
 
@@ -426,47 +430,6 @@ public class InterviewEngineImpl implements InterviewEngine {
             }
         }
         return Math.max(1, Math.min(total, 50));
-    }
-
-    private String formatJobBrief(Job job) {
-        if (job == null) return "未选择岗位";
-        return job.getName() + (job.getRequiredSkills() != null ? "，技能要求: " + job.getRequiredSkills() : "");
-    }
-
-    private String formatResumeBrief(Resume resume) {
-        if (resume == null) return "无简历信息";
-        return resume.getName() + (resume.getSummary() != null ? "，摘要: " + abbreviate(resume.getSummary().toString(), 500) : "");
-    }
-
-    private String formatJob(Job job) {
-        if (job == null) {
-            return "未选择岗位";
-        }
-        return "岗位名称: " + job.getName() + "\n"
-                + "岗位描述: " + nullToEmpty(job.getDescription()) + "\n"
-                + "技能要求: " + (job.getRequiredSkills() != null ? job.getRequiredSkills() : List.of()) + "\n"
-                + "领域: " + (job.getDomains() != null ? job.getDomains() : List.of());
-    }
-
-    private String formatResume(Resume resume) {
-        if (resume == null) {
-            return "未选择简历";
-        }
-        return "简历名称: " + resume.getName() + "\n"
-                + "简历摘要: " + (resume.getSummary() != null ? resume.getSummary() : Map.of()) + "\n"
-                + "结构化内容: " + (resume.getParsedContent() != null ? resume.getParsedContent() : Map.of()) + "\n"
-                + "原文片段: " + abbreviate(resume.getRawText(), 2000);
-    }
-
-    private String nullToEmpty(String value) {
-        return value == null ? "" : value;
-    }
-
-    private String abbreviate(String value, int maxLength) {
-        if (value == null || value.length() <= maxLength) {
-            return value == null ? "" : value;
-        }
-        return value.substring(0, maxLength) + "...";
     }
 
     private String getConversationHistory(Long sessionId) {

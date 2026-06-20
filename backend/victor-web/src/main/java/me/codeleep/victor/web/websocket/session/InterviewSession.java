@@ -1,6 +1,9 @@
 package me.codeleep.victor.web.websocket.session;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.codeleep.victor.core.interviewer.InterviewContextRestorer;
+import me.codeleep.victor.core.interviewer.InterviewContextResult;
+import me.codeleep.victor.core.interviewer.Interviewer;
 import me.codeleep.victor.web.websocket.processor.ProcessingContext;
 import me.codeleep.victor.web.websocket.processor.TextProcessor;
 import me.codeleep.victor.web.websocket.protocol.ClientMessage;
@@ -304,14 +307,23 @@ public class InterviewSession implements Session {
      * @return 对话轮数；负数表示错误（已发送 error 消息）
      */
     private long ensureInterviewContext(Long interviewSessionId) {
-        long result = contextRestorer.ensureContext(interviewSessionId, processingContext);
-        switch ((int) result) {
-            case -1 -> sendMessage(new InterviewServerErrorMessage("面试会话不存在: " + interviewSessionId));
-            case -2 -> sendMessage(new InterviewServerErrorMessage("面试已结束，无法恢复: " + interviewSessionId));
-            case -3 -> sendMessage(new InterviewServerErrorMessage("Agent 不存在或配置异常"));
-            case -4 -> sendMessage(new InterviewServerErrorMessage("Interview questions are not ready. Please start after config status is READY."));
+        InterviewContextResult result = contextRestorer.ensureContext(interviewSessionId);
+        if (result.getCode() < 0) {
+            switch (result.getCode()) {
+                case -1 -> sendMessage(new InterviewServerErrorMessage("面试会话不存在: " + interviewSessionId));
+                case -2 -> sendMessage(new InterviewServerErrorMessage("面试已结束，无法恢复: " + interviewSessionId));
+                case -3 -> sendMessage(new InterviewServerErrorMessage("Agent 不存在或配置异常"));
+                case -4 -> sendMessage(new InterviewServerErrorMessage("Interview questions are not ready. Please start after config status is READY."));
+            }
+            return result.getCode();
         }
-        return result;
+        // 将结果填充到 ProcessingContext
+        processingContext.setAttribute(ProcessingContext.ATTR_INTERVIEWER, result.getInterviewer());
+        processingContext.setAttribute(ProcessingContext.ATTR_AGENT_KEY, result.getAgentKey());
+        processingContext.setAttribute(ProcessingContext.ATTR_USER_ID, result.getUserId());
+        processingContext.setAttribute(ProcessingContext.ATTR_INTERVIEW_SESSION_ID, result.getInterviewSessionId());
+        processingContext.setAttribute(ProcessingContext.ATTR_CURRENT_QUESTION_ID, result.getCurrentQuestionId());
+        return result.getTurnCount();
     }
 
     /**
@@ -398,5 +410,10 @@ public class InterviewSession implements Session {
         log.info("[Session:{}] Cleaning up...", sessionId);
         status = Status.DISCONNECTED;
         executor.shutdownNow();
+        Interviewer interviewer = processingContext.getAttribute(ProcessingContext.ATTR_INTERVIEWER);
+        if (interviewer != null) {
+            interviewer.close();
+            processingContext.removeAttribute(ProcessingContext.ATTR_INTERVIEWER);
+        }
     }
 }

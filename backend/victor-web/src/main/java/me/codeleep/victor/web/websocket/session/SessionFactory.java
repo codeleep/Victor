@@ -8,6 +8,7 @@ import me.codeleep.victor.core.service.VoiceTtsConfigService;
 import me.codeleep.victor.infra.voice.asr.AsrClient;
 import me.codeleep.victor.infra.voice.tts.TtsClient;
 import me.codeleep.victor.core.voice.VoiceClientFactory;
+import me.codeleep.victor.core.interviewer.InterviewContextRestorer;
 import me.codeleep.victor.web.websocket.processor.TextProcessor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;

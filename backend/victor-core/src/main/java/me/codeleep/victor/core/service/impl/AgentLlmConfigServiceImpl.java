@@ -9,12 +9,13 @@ import me.codeleep.victor.common.result.ResultCode;
 import me.codeleep.victor.core.dto.AgentLlmConfigRequest;
 import me.codeleep.victor.core.dto.AgentLlmConfigVO;
 import me.codeleep.victor.core.entity.AgentLlmConfig;
-import me.codeleep.victor.infra.agent.llm.ChatClientFactory;
+import me.codeleep.victor.infra.agent.core.LlmDefinition;
+import me.codeleep.victor.infra.agent.llm.ModelWrapperFactory;
 import me.codeleep.victor.core.mapper.AgentLlmConfigMapper;
 import me.codeleep.victor.core.service.AgentLlmConfigService;
 import me.codeleep.victor.core.service.converter.AgentLlmConfigConverter;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatResponse;
+
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +30,7 @@ import java.util.List;
 public class AgentLlmConfigServiceImpl implements AgentLlmConfigService {
 
     private final AgentLlmConfigMapper agentLlmConfigMapper;
-    private final ChatClientFactory chatClientFactory;
+    private final ModelWrapperFactory modelWrapperFactory;
     private final AgentLlmConfigConverter llmConfigConverter;
 
     @Override
@@ -152,14 +153,18 @@ public class AgentLlmConfigServiceImpl implements AgentLlmConfigService {
 
         log.info("测试LLM配置连接: id={}, provider={}", id, config.getProvider());
         try {
-            String apiKey = config.getAuthParams() != null ? (String) config.getAuthParams().getOrDefault("apiKey", "") : "";
-            ChatClient chatClient = chatClientFactory.createChatClient(
-                    config.getProtocol(), config.getApiEndpoint(), apiKey,
-                    config.getModelName(),
-                    config.getTemperature() != null ? config.getTemperature().doubleValue() : 0.7,
-                    config.getMaxTokens() != null ? config.getMaxTokens() : 4096);
-            ChatResponse response = chatClient.prompt("Hi").call().chatResponse();
-            if (response == null || response.getResult() == null) {
+            String apiKey = config.getAuthParams() != null
+                    ? (String) config.getAuthParams().getOrDefault("apiKey", "") : "";
+            LlmDefinition llm = LlmDefinition.builder()
+                    .protocol(config.getProtocol())
+                    .baseUrl(config.getApiEndpoint())
+                    .apiKey(apiKey)
+                    .modelName(config.getModelName())
+                    .temperature(config.getTemperature() != null ? config.getTemperature().doubleValue() : 0.7)
+                    .maxTokens(config.getMaxTokens() != null ? config.getMaxTokens() : 4096)
+                    .build();
+            String reply = modelWrapperFactory.generate(llm, "Hi");
+            if (reply == null || reply.isBlank()) {
                 throw new BusinessException(ResultCode.BAD_REQUEST, "LLM 返回为空");
             }
         } catch (BusinessException e) {

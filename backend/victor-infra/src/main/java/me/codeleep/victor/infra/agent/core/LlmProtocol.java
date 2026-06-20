@@ -5,6 +5,7 @@ import lombok.Getter;
 
 /**
  * LLM 协议枚举
+ * 决定 infra 创建哪个 AgentScope ModelWrapper
  */
 @Getter
 @AllArgsConstructor

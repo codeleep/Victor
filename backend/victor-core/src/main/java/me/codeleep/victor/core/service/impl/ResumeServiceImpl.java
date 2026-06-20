@@ -12,7 +12,8 @@ import me.codeleep.victor.common.context.UserContext;
 import me.codeleep.victor.core.dto.ResumeVO;
 import me.codeleep.victor.core.entity.AgentLlmConfig;
 import me.codeleep.victor.core.entity.Resume;
-import me.codeleep.victor.infra.agent.llm.ChatClientFactory;
+import me.codeleep.victor.infra.agent.core.LlmDefinition;
+import me.codeleep.victor.infra.agent.llm.ModelWrapperFactory;
 import me.codeleep.victor.core.mapper.AgentLlmConfigMapper;
 import me.codeleep.victor.core.mapper.ResumeMapper;
 import me.codeleep.victor.core.service.ResumeService;
@@ -21,7 +22,7 @@ import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.sax.BodyContentHandler;
-import org.springframework.ai.chat.client.ChatClient;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -48,7 +49,7 @@ public class ResumeServiceImpl implements ResumeService {
 
     private final ResumeMapper resumeMapper;
     private final ResumeConverter resumeConverter;
-    private final ChatClientFactory chatClientFactory;
+    private final ModelWrapperFactory modelWrapperFactory;
     private final AgentLlmConfigMapper agentLlmConfigMapper;
 
     @Value("${file.upload.path:${user.home}/victor/uploads}")
@@ -116,11 +117,14 @@ public class ResumeServiceImpl implements ResumeService {
 
         // 3. 调用 LLM 将简历内容转换为结构化 Markdown
         String apiKey = llmConfig.getAuthParams() != null ? (String) llmConfig.getAuthParams().getOrDefault("apiKey", "") : "";
-        ChatClient chatClient = chatClientFactory.createChatClient(
-                llmConfig.getProtocol(), llmConfig.getApiEndpoint(), apiKey,
-                llmConfig.getModelName(),
-                llmConfig.getTemperature() != null ? llmConfig.getTemperature().doubleValue() : 0.7,
-                llmConfig.getMaxTokens() != null ? llmConfig.getMaxTokens() : 4096);
+        LlmDefinition llm = LlmDefinition.builder()
+                .protocol(llmConfig.getProtocol())
+                .baseUrl(llmConfig.getApiEndpoint())
+                .apiKey(apiKey)
+                .modelName(llmConfig.getModelName())
+                .temperature(llmConfig.getTemperature() != null ? llmConfig.getTemperature().doubleValue() : 0.7)
+                .maxTokens(llmConfig.getMaxTokens() != null ? llmConfig.getMaxTokens() : 4096)
+                .build();
         String prompt = "你是一个简历解析专家。请将以下简历内容转换为结构化的 Markdown 格式。\n" +
                 "要求：\n" +
                 "1. 使用清晰的标题层级（# ## ###）\n" +
@@ -129,7 +133,7 @@ public class ResumeServiceImpl implements ResumeService {
                 "4. 去除无关的格式噪音，只保留有意义的内容\n\n" +
                 "简历内容：\n" + extractedText;
 
-        String markdown = chatClient.prompt(prompt).call().content();
+        String markdown = modelWrapperFactory.generate(llm, prompt);
 
         // 4. 存储结构化 Markdown 到 rawText
         resume.setRawText(markdown);

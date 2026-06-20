@@ -1,10 +1,9 @@
 package me.codeleep.victor.infra.agent.runner;
 
-import me.codeleep.victor.infra.agent.core.AgentDefinition;
-
 /**
  * 单 Agent 运行器接口
- * 负责驱动单个 Agent 的 agentic loop，管理 tool calling、handoff、guardrail
+ * 负责驱动已构建 Agent 的 agentic loop，管理工具调用、流式事件
+ * Agent 实例由 {@link AgentFactory} 构建，上层持有后传入
  */
-public interface AgentRunner extends Runner<AgentDefinition> {
+public interface AgentRunner extends Runner {
 }

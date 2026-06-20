@@ -6,9 +6,8 @@ import me.codeleep.victor.common.enums.Speaker;
 import me.codeleep.victor.common.utils.StrUtil;
 import me.codeleep.victor.core.entity.InterviewTurn;
 import me.codeleep.victor.core.mapper.InterviewTurnMapper;
-import me.codeleep.victor.infra.agent.core.AgentContext;
-import me.codeleep.victor.infra.agent.core.AgentDefinition;
-import me.codeleep.victor.infra.agent.runner.AgentRunner;
+import me.codeleep.victor.infra.agent.core.AgentResult;
+import me.codeleep.victor.core.interviewer.Interviewer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -19,12 +18,12 @@ import java.util.List;
 /**
  * 面试Agent文本处理器。
  *
- * <p>使用 Victor Agent 框架驱动面试流程。将 ASR 识别的文本送入面试 Agent，
- * Agent 返回的文本按句子分割后流式返回给 TTS 合成。</p>
+ * <p>使用常驻的 AgentScope ReActAgent（封装在 {@link Interviewer} 中）驱动面试流程。
+ * 将 ASR 识别的文本送入面试 Agent，Agent 返回的事件流按句子分割后流式返回给 TTS 合成。</p>
  *
- * <p>{@code AgentDefinition} 和 {@code AgentContext} 在会话初始化阶段由
- * {@code InterviewContextRestorer.ensureContext()} 构建并写入 {@code ProcessingContext}，
- * 本处理器只负责读取和使用。</p>
+ * <p>{@link Interviewer} 实例在会话初始化阶段由 {@code InterviewContextRestorer} 构建并写入
+ * {@code ProcessingContext}，本处理器只负责读取和使用。Agent 记忆由 ReActAgent 自带 Memory 管理，
+ * 独立持久化，无需本处理器手动维护对话历史。</p>
  *
  * <p>配置方式：{@code speech.processor=interview}</p>
  */
@@ -33,11 +32,9 @@ import java.util.List;
 @ConditionalOnProperty(name = "speech.processor", havingValue = "interview")
 public class InterviewTextProcessor implements TextProcessor {
 
-    private final AgentRunner runner;
     private final InterviewTurnMapper turnMapper;
 
-    public InterviewTextProcessor(AgentRunner runner, InterviewTurnMapper turnMapper) {
-        this.runner = runner;
+    public InterviewTextProcessor(InterviewTurnMapper turnMapper) {
         this.turnMapper = turnMapper;
         log.info("InterviewTextProcessor initialized");
     }
@@ -51,24 +48,14 @@ public class InterviewTextProcessor implements TextProcessor {
 
         return Flux.create(emitter -> {
             try {
-                // 1. 从 ProcessingContext 获取 AgentContext（会话初始化时已创建）
-                final AgentContext agentContext = context.getAttribute(ProcessingContext.ATTR_AGENT_CONTEXT);
-                if (agentContext == null) {
-                    log.error("[Interview] AgentContext 未初始化，请先发送 start 或 reconnect 命令");
-                    emitter.error(new IllegalStateException("AgentContext 未初始化，请先发送 start 或 reconnect 命令"));
+                Interviewer interviewer = context.getAttribute(ProcessingContext.ATTR_INTERVIEWER);
+                if (interviewer == null) {
+                    log.error("[Interview] Interviewer 未初始化，请先发送 start 或 reconnect 命令");
+                    emitter.error(new IllegalStateException("Interviewer 未初始化，请先发送 start 或 reconnect 命令"));
                     return;
                 }
 
-                // 2. 从 ProcessingContext 获取 AgentDefinition（会话初始化时已构建）
-                AgentDefinition agentDef = context.getAttribute(ProcessingContext.ATTR_AGENT_DEFINITION);
-                if (agentDef == null) {
-                    log.error("[Interview] AgentDefinition 未初始化，请先发送 start 或 reconnect 命令");
-                    emitter.error(new IllegalStateException("AgentDefinition 未初始化，请先发送 start 或 reconnect 命令"));
-                    return;
-                }
-
-                // 3. 添加用户消息到对话历史
-                agentContext.addUserMessage(text);
+                // 持久化用户输入
                 if (interviewSessionId != null) {
                     String displayText = context.getAttribute(ProcessingContext.ATTR_INPUT_TEXT);
                     List<Object> attachments = context.getAttribute(ProcessingContext.ATTR_ATTACHMENTS);
@@ -77,18 +64,17 @@ public class InterviewTextProcessor implements TextProcessor {
                             attachments);
                 }
 
-                // 4. 流式执行 Agent
+                // 流式执行 Agent，按 ANSWER 事件分句输出给 TTS
                 StringBuilder sentenceBuffer = new StringBuilder();
                 StringBuilder fullResponse = new StringBuilder();
 
-                runner.streamRun(agentDef, agentContext)
+                interviewer.chat(text)
                         .doOnNext(result -> {
-                            String content = result.getContent();
-                            if (content != null && !content.isEmpty()) {
-                                sentenceBuffer.append(content);
-                                fullResponse.append(content);
+                            if (result.getType() == AgentResult.EventType.ANSWER
+                                    && result.getContent() != null && !result.getContent().isEmpty()) {
+                                sentenceBuffer.append(result.getContent());
+                                fullResponse.append(result.getContent());
 
-                                // 按标点分句，逐句发送给 TTS
                                 String buffered = sentenceBuffer.toString();
                                 int lastSplit = StrUtil.findLastSentenceEnd(buffered);
                                 if (lastSplit >= 0) {
@@ -96,7 +82,6 @@ public class InterviewTextProcessor implements TextProcessor {
                                     sentenceBuffer.setLength(0);
                                     sentenceBuffer.append(buffered.substring(lastSplit + 1));
 
-                                    // 按句分割逐个发送
                                     for (String sentence : StrUtil.splitSentences(sentences)) {
                                         if (!sentence.trim().isEmpty()) {
                                             log.info("[Interview] Sentence: {}", sentence.trim());
@@ -107,19 +92,15 @@ public class InterviewTextProcessor implements TextProcessor {
                             }
                         })
                         .doOnComplete(() -> {
-                            // 处理剩余不完整句子
                             if (!sentenceBuffer.isEmpty()) {
                                 String remaining = sentenceBuffer.toString().trim();
                                 if (!remaining.isEmpty()) {
-                                    log.info("[Interview] Final: {}", remaining);
                                     fullResponse.append(remaining);
                                     emitter.next(remaining);
                                 }
                             }
 
-                            // 持久化 Agent 回复
                             if (interviewSessionId != null && !fullResponse.isEmpty()) {
-                                agentContext.addAssistantMessage(fullResponse.toString());
                                 saveTurn(interviewSessionId, currentQuestionId, Speaker.AI, fullResponse.toString(), null);
                             }
 
