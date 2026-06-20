@@ -84,11 +84,18 @@ public class Interviewer {
         }
     }
 
+    /**
+     * 透传到 RuntimeContext 的 key:当前会话的 Interviewer 实例(供工具按类型注入)
+     */
+    public static final String VAR_INTERVIEWER = "__interviewer";
+
     private AgentContext buildContext(String input) {
         AgentContext context = new AgentContext(sessionId, userId, input);
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("agentKey", agentKey);
         context.setMetadata(metadata);
+        // 透传自身引用,工具方法可通过 RuntimeContext.get(Interviewer.class) 取到
+        context.setVariable(VAR_INTERVIEWER, this);
         return context;
     }
 }

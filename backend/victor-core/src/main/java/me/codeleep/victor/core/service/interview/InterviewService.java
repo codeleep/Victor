@@ -118,6 +118,24 @@ public interface InterviewService {
     Flux<String> streamSubmitAnswer(Long sessionId, String answer);
 
     /**
+     * 单题追问次数兜底:若当前题候选人回答次数已达上限(maxFollowUps),
+     * 强制推进到下一道预备题(更新 currentQuestionId),避免面试官死磕一题。
+     * 返回推进结果(是否推进、是否已结束面试)。
+     */
+    ForceAdvanceResult forceAdvanceIfLimitReached(Long sessionId, int maxFollowUps);
+
+    /**
+     * 强制推进结果
+     *
+     * @param advanced        是否执行了推进
+     * @param finished        是否已结束面试(已到最后一题)
+     * @param currentQuestionId 推进后的当前题目ID(结束时为 null)
+     */
+    record ForceAdvanceResult(boolean advanced, boolean finished, Long currentQuestionId) {}
+
+
+
+    /**
      * 获取提示
      */
     String getHint(Long sessionId, String currentQuestion);

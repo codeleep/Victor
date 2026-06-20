@@ -4,10 +4,17 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import me.codeleep.victor.common.enums.Speaker;
 import me.codeleep.victor.common.utils.StrUtil;
+import me.codeleep.victor.core.engine.InterviewContextBuilder;
+import me.codeleep.victor.core.entity.InterviewConfig;
+import me.codeleep.victor.core.entity.InterviewQuestion;
 import me.codeleep.victor.core.entity.InterviewTurn;
-import me.codeleep.victor.core.mapper.InterviewTurnMapper;
-import me.codeleep.victor.infra.agent.core.AgentResult;
 import me.codeleep.victor.core.interviewer.Interviewer;
+import me.codeleep.victor.core.mapper.InterviewConfigMapper;
+import me.codeleep.victor.core.mapper.InterviewQuestionMapper;
+import me.codeleep.victor.core.mapper.InterviewTurnMapper;
+import me.codeleep.victor.core.service.interview.InterviewService;
+import me.codeleep.victor.infra.agent.core.AgentResult;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -19,11 +26,10 @@ import java.util.List;
  * 面试Agent文本处理器。
  *
  * <p>使用常驻的 AgentScope ReActAgent（封装在 {@link Interviewer} 中）驱动面试流程。
- * 将 ASR 识别的文本送入面试 Agent，Agent 返回的事件流按句子分割后流式返回给 TTS 合成。</p>
+ * 面试官 Agent 自主评估候选人回答,决定追问或调用 advance_to_next_question 工具切换到下一道预备题。
+ * 处理器在每轮回答后做单题追问次数兜底:达到上限则强制推进,防止面试官死磕一题。</p>
  *
- * <p>{@link Interviewer} 实例在会话初始化阶段由 {@code InterviewContextRestorer} 构建并写入
- * {@code ProcessingContext}，本处理器只负责读取和使用。Agent 记忆由 ReActAgent 自带 Memory 管理，
- * 独立持久化，无需本处理器手动维护对话历史。</p>
+ * <p>题目推进严格基于 interview_question 预备题表,不即时生成新题。</p>
  *
  * <p>配置方式：{@code speech.processor=interview}</p>
  */
@@ -32,10 +38,26 @@ import java.util.List;
 @ConditionalOnProperty(name = "speech.processor", havingValue = "interview")
 public class InterviewTextProcessor implements TextProcessor {
 
-    private final InterviewTurnMapper turnMapper;
+    /** 单题最大追问次数(候选人回答次数),达到即强制推进下一题 */
+    @Value("${interview.max-follow-ups:5}")
+    private int maxFollowUps;
 
-    public InterviewTextProcessor(InterviewTurnMapper turnMapper) {
+    private final InterviewTurnMapper turnMapper;
+    private final InterviewService interviewService;
+    private final InterviewConfigMapper interviewConfigMapper;
+    private final InterviewQuestionMapper interviewQuestionMapper;
+    private final InterviewContextBuilder interviewContextBuilder;
+
+    public InterviewTextProcessor(InterviewTurnMapper turnMapper,
+                                   InterviewService interviewService,
+                                   InterviewConfigMapper interviewConfigMapper,
+                                   InterviewQuestionMapper interviewQuestionMapper,
+                                   InterviewContextBuilder interviewContextBuilder) {
         this.turnMapper = turnMapper;
+        this.interviewService = interviewService;
+        this.interviewConfigMapper = interviewConfigMapper;
+        this.interviewQuestionMapper = interviewQuestionMapper;
+        this.interviewContextBuilder = interviewContextBuilder;
         log.info("InterviewTextProcessor initialized");
     }
 
@@ -55,7 +77,7 @@ public class InterviewTextProcessor implements TextProcessor {
                     return;
                 }
 
-                // 持久化用户输入
+                // 1. 持久化用户输入
                 if (interviewSessionId != null) {
                     String displayText = context.getAttribute(ProcessingContext.ATTR_INPUT_TEXT);
                     List<Object> attachments = context.getAttribute(ProcessingContext.ATTR_ATTACHMENTS);
@@ -64,7 +86,7 @@ public class InterviewTextProcessor implements TextProcessor {
                             attachments);
                 }
 
-                // 流式执行 Agent，按 ANSWER 事件分句输出给 TTS
+                // 2.Agent 自主评估追问价值:有则追问,无则调用 advance_to_next_question 工具切下一题
                 StringBuilder sentenceBuffer = new StringBuilder();
                 StringBuilder fullResponse = new StringBuilder();
 
@@ -84,7 +106,6 @@ public class InterviewTextProcessor implements TextProcessor {
 
                                     for (String sentence : StrUtil.splitSentences(sentences)) {
                                         if (!sentence.trim().isEmpty()) {
-                                            log.info("[Interview] Sentence: {}", sentence.trim());
                                             emitter.next(sentence.trim());
                                         }
                                     }
@@ -100,8 +121,19 @@ public class InterviewTextProcessor implements TextProcessor {
                                 }
                             }
 
+                            // 持久化面试官回复(题目可能已被 Agent 工具切换,按 DB 当前题 ID 落库)
+                            Long spokenQuestionId = resolveCurrentQuestionId(interviewSessionId, currentQuestionId);
                             if (interviewSessionId != null && !fullResponse.isEmpty()) {
-                                saveTurn(interviewSessionId, currentQuestionId, Speaker.AI, fullResponse.toString(), null);
+                                saveTurn(interviewSessionId, spokenQuestionId, Speaker.AI, fullResponse.toString(), null);
+                            }
+                            // 同步 ProcessingContext 的当前题目 ID
+                            if (spokenQuestionId != null && !spokenQuestionId.equals(currentQuestionId)) {
+                                context.setAttribute(ProcessingContext.ATTR_CURRENT_QUESTION_ID, spokenQuestionId);
+                            }
+
+                            // 3. 单题追问次数兜底:达到上限则强制推进下一题
+                            if (interviewSessionId != null) {
+                                applyFollowUpLimit(context, interviewSessionId, interviewer);
                             }
 
                             log.info("[Interview] Stream completed: sessionId={}", context.getSessionId());
@@ -118,6 +150,54 @@ public class InterviewTextProcessor implements TextProcessor {
                 emitter.error(e);
             }
         }, FluxSink.OverflowStrategy.BUFFER);
+    }
+
+    /**
+     * 单题追问次数兜底:当前题候选人回答次数达到上限则强制推进。
+     * 推进后同步面试官 Agent 的"当前题目"记忆。
+     */
+    private void applyFollowUpLimit(ProcessingContext context, Long interviewSessionId, Interviewer interviewer) {
+        try {
+            InterviewService.ForceAdvanceResult result =
+                    interviewService.forceAdvanceIfLimitReached(interviewSessionId, maxFollowUps);
+            if (!result.advanced()) {
+                return;
+            }
+            context.setAttribute(ProcessingContext.ATTR_CURRENT_QUESTION_ID, result.currentQuestionId());
+            if (result.currentQuestionId() != null) {
+                syncInterviewerQuestion(interviewSessionId, result.currentQuestionId(), interviewer);
+                log.info("[Interview] 兜底强制推进完成: sessionId={}, questionId={}, finished={}",
+                        interviewSessionId, result.currentQuestionId(), result.finished());
+            } else {
+                log.info("[Interview] 兜底强制推进:面试已结束, sessionId={}", interviewSessionId);
+            }
+        } catch (Exception e) {
+            log.warn("[Interview] 兜底推进失败: sessionId={}", interviewSessionId, e);
+        }
+    }
+
+    private void syncInterviewerQuestion(Long interviewSessionId, Long questionId, Interviewer interviewer) {
+        try {
+            InterviewConfig cfg = interviewConfigMapper.selectById(interviewSessionId);
+            InterviewQuestion q = interviewQuestionMapper.selectById(questionId);
+            if (cfg != null && q != null) {
+                interviewer.updateCurrentQuestion(interviewContextBuilder.buildCurrentQuestionContext(cfg, q));
+            }
+        } catch (Exception e) {
+            log.warn("[Interview] 同步面试官题目记忆失败: sessionId={}, questionId={}", interviewSessionId, questionId, e);
+        }
+    }
+
+    private Long resolveCurrentQuestionId(Long interviewSessionId, Long fallback) {
+        if (interviewSessionId == null) {
+            return fallback;
+        }
+        try {
+            InterviewConfig cfg = interviewConfigMapper.selectById(interviewSessionId);
+            return cfg != null && cfg.getCurrentQuestionId() != null ? cfg.getCurrentQuestionId() : fallback;
+        } catch (Exception e) {
+            return fallback;
+        }
     }
 
     @Override
@@ -156,5 +236,4 @@ public class InterviewTextProcessor implements TextProcessor {
         );
         return last != null && last.getTurnIndex() != null ? last.getTurnIndex() + 1 : 1;
     }
-
 }

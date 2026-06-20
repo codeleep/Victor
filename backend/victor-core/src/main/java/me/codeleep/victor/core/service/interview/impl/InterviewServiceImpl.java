@@ -7,6 +7,7 @@ import me.codeleep.victor.common.context.UserContext;
 import me.codeleep.victor.common.enums.InterviewConfigStatus;
 import me.codeleep.victor.common.enums.IngestStatus;
 import me.codeleep.victor.common.enums.RecallStrategy;
+import me.codeleep.victor.common.enums.Speaker;
 import me.codeleep.victor.common.exception.BusinessException;
 import me.codeleep.victor.common.result.ResultCode;
 import me.codeleep.victor.core.engine.InterviewEngine;
@@ -374,6 +375,43 @@ public class InterviewServiceImpl implements InterviewService {
         InterviewConfig config = getSessionConfigOrThrow(sessionId);
         ensureSessionInProgress(config);
         return interviewEngine.streamEvaluateAnswer(sessionId, answer);
+    }
+
+    @Override
+    @Transactional
+    public ForceAdvanceResult forceAdvanceIfLimitReached(Long sessionId, int maxFollowUps) {
+        InterviewConfig config = getSessionConfigOrThrow(sessionId);
+        if (config.getStatus() != InterviewConfigStatus.IN_PROGRESS) {
+            return new ForceAdvanceResult(false, false, config.getCurrentQuestionId());
+        }
+        InterviewQuestion current = getPreparedQuestion(config);
+        int answeredCount = countUserAnswersForQuestion(sessionId, current.getId());
+        if (answeredCount < maxFollowUps) {
+            return new ForceAdvanceResult(false, false, current.getId());
+        }
+        // 已达追问上限,强制推进到下一题
+        InterviewQuestion next = getQuestionAfter(config.getId(), current.getId());
+        if (next == null) {
+            completeInterview(sessionId);
+            log.info("[Interview] 单题追问达上限且无下一题,结束面试: sessionId={}, questionId={}, answers={}",
+                    sessionId, current.getId(), answeredCount);
+            return new ForceAdvanceResult(true, true, null);
+        }
+        config.setCurrentQuestionId(next.getId());
+        interviewConfigMapper.updateById(config);
+        log.info("[Interview] 单题追问达上限,强制推进: sessionId={}, from={}, to={}, answers={}",
+                sessionId, current.getId(), next.getId(), answeredCount);
+        return new ForceAdvanceResult(true, false, next.getId());
+    }
+
+    private int countUserAnswersForQuestion(Long sessionId, Long questionId) {
+        Long count = interviewTurnMapper.selectCount(
+                new LambdaQueryWrapper<InterviewTurn>()
+                        .eq(InterviewTurn::getSessionId, sessionId)
+                        .eq(InterviewTurn::getQuestionId, questionId)
+                        .eq(InterviewTurn::getSpeaker, Speaker.USER)
+        );
+        return count != null ? count.intValue() : 0;
     }
 
     @Override

@@ -30,6 +30,9 @@ public class InterviewModuleInitializer extends BaseInitializer implements Modul
     public static final String KEY_INTERVIEWER_ASSISTANT = "interviewer-assistant";
     public static final String KEY_TEAM_INTERVIEW = "system-team-interview";
 
+    /** 面试官推进下一题工具名(对应 AdvanceQuestionTool 的 @Tool name) */
+    public static final String TOOL_ADVANCE_QUESTION = "advance_to_next_question";
+
     private final AgentLlmConfigMapper agentLlmConfigMapper;
 
     public InterviewModuleInitializer(AgentMapper agentMapper, AgentTeamMapper agentTeamMapper,
