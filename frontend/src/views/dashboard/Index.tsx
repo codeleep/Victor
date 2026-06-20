@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [initDone, setInitDone] = useState<boolean | null>(null)
   const [initing, setIniting] = useState(false)
+  const [justInited, setJustInited] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -63,6 +64,7 @@ export default function Dashboard() {
         if (result.agentCreated) parts.push(`${result.agentCreated} 个Agent`)
         if (result.teamCreated) parts.push(`${result.teamCreated} 个团队`)
         setInitDone(true)
+        setJustInited(true)
       }
     } catch (e) {
       console.error('Init failed:', e)
@@ -102,7 +104,7 @@ export default function Dashboard() {
         />
       )}
 
-      {initDone === true && (
+      {justInited && (
         <Alert
           type="success"
           showIcon
@@ -116,6 +118,7 @@ export default function Dashboard() {
           }
           style={{ marginBottom: 24 }}
           closable
+          onClose={() => setJustInited(false)}
         />
       )}
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Card, Table, Button, Tag, Space, Tabs, Modal, Form, Input, Select, InputNumber, Switch, App, Popconfirm } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, RocketOutlined } from '@ant-design/icons'
-import { agentApi, agentTeamApi, agentLlmConfigApi, systemApi } from '@/api'
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { agentApi, agentTeamApi, agentLlmConfigApi } from '@/api'
 import { useMetadataStore } from '@/stores/metadata'
 import type { AgentVO, AgentRequest, AgentTeamVO, TeamRequest, TeamMemberDTO, AgentLlmConfigVO, AgentLlmConfigRequest } from '@/types'
 import './Settings.scss'
@@ -374,37 +374,10 @@ function LlmPanel() {
   )
 }
 export default function AiConfig() {
-  const { message } = App.useApp()
-  const [initLoading, setInitLoading] = useState(false)
-  const [initialized, setInitialized] = useState<boolean | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  useEffect(() => {
-    systemApi.initStatus().then(setInitialized).catch(() => setInitialized(false))
-  }, [])
-
-  const handleInit = async () => {
-    setInitLoading(true)
-    try {
-      const result = await systemApi.init()
-      if (result.skipped) {
-        message.info('系统已初始化，无需重复操作')
-      } else {
-        message.success('系统初始化成功')
-      }
-      setInitialized(true)
-      setRefreshKey(k => k + 1)
-    } catch (e) {
-      message.error('系统初始化失败')
-    } finally {
-      setInitLoading(false)
-    }
-  }
-
   const items = [
-    { key: 'teams', label: 'Agent 团队', children: <AgentTeamPanel key={`team-${refreshKey}`} /> },
-    { key: 'agents', label: 'Agent 配置', children: <AgentPanel key={`agent-${refreshKey}`} /> },
-    { key: 'llm', label: 'LLM 配置', children: <LlmPanel key={`llm-${refreshKey}`} /> },
+    { key: 'teams', label: 'Agent 团队', children: <AgentTeamPanel /> },
+    { key: 'agents', label: 'Agent 配置', children: <AgentPanel /> },
+    { key: 'llm', label: 'LLM 配置', children: <LlmPanel /> },
   ]
 
   return (
@@ -413,16 +386,6 @@ export default function AiConfig() {
         <div className="header-left">
           <h1>AI 配置</h1>
           <p>管理 Agent、团队和 LLM 模型配置</p>
-        </div>
-        <div className="header-right">
-          <Button
-            type="primary"
-            icon={<RocketOutlined />}
-            loading={initLoading}
-            onClick={handleInit}
-          >
-            {initialized ? '重新初始化' : '一键初始化'}
-          </Button>
         </div>
       </div>
       <Card className="table-card">
