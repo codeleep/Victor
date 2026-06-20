@@ -4,9 +4,11 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.OpenAIChatModel;
 import lombok.extern.slf4j.Slf4j;
 import me.codeleep.victor.infra.agent.core.LlmDefinition;
 import me.codeleep.victor.infra.agent.core.LlmProtocol;
@@ -38,9 +40,28 @@ public class ModelWrapperFactory {
         double temperature = llmDefinition.getTemperature();
         int maxTokens = llmDefinition.getMaxTokens();
 
+        GenerateOptions defaultOptions = GenerateOptions.builder()
+                .temperature(temperature)
+                .maxTokens(maxTokens)
+                .build();
+
         return switch (protocol) {
             case VOLCENGINE -> new VolcengineModelWrapper(baseUrl, apiKey, modelName, temperature, maxTokens);
-            case OPENAI, QWEN, CLAUDE -> throw new UnsupportedOperationException(
+            case OPENAI -> OpenAIChatModel.builder()
+                    .apiKey(apiKey)
+                    .baseUrl(baseUrl)
+                    .modelName(modelName)
+                    .stream(true)
+                    .generateOptions(defaultOptions)
+                    .build();
+            case CLAUDE -> AnthropicChatModel.builder()
+                    .apiKey(apiKey)
+                    .baseUrl(baseUrl)
+                    .modelName(modelName)
+                    .stream(true)
+                    .defaultOptions(defaultOptions)
+                    .build();
+            case QWEN -> throw new UnsupportedOperationException(
                     "暂未实现的 LLM 协议: " + protocol + "，请补充对应 ModelWrapper");
         };
     }
