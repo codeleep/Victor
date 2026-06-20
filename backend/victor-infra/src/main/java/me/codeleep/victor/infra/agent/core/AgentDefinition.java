@@ -2,11 +2,6 @@ package me.codeleep.victor.infra.agent.core;
 
 import lombok.Builder;
 import lombok.Data;
-import me.codeleep.victor.infra.agent.guardrail.Guardrail;
-import me.codeleep.victor.infra.agent.handoff.Handoff;
-import me.codeleep.victor.infra.agent.lifecycle.AgentLifecycleListener;
-import me.codeleep.victor.infra.agent.tool.AgentTool;
-
 import java.util.List;
 
 /**
