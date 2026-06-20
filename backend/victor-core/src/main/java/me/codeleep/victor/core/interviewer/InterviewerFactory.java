@@ -78,11 +78,17 @@ public class InterviewerFactory {
         String agentSessionId = interviewSessionId + ":" + teamDef.getMainAgent().getKey();
         String userIdStr = String.valueOf(userId);
 
+        // 传递裸 interviewSessionId，让 AgentFactory.buildTeam 拼接 ":agentKey" 作为 defaultSessionId，
+        // 避免二次拼接导致 AgentState 读写 key 不一致
         ReActAgent agent = agentFactory.buildTeam(
-                teamDef, agentSessionId, userIdStr, agentMemoryRepository);
+                teamDef, interviewSessionId, userIdStr, agentMemoryRepository);
 
-        // 仅首次（Memory 为空）注入两类上下文
+        // 仅首次（Memory 为空）注入 background + currentQuestion
         injectContextIfEmpty(agent, agentSessionId, userIdStr, background, currentQuestionContext);
+        // 始终用 DB 中的当前题目同步 Agent 记忆（覆盖首次注入 + 冷启动恢复两种场景）
+        if (currentQuestionContext != null && !currentQuestionContext.isBlank()) {
+            replaceCurrentQuestion(agent, agentSessionId, userIdStr, currentQuestionContext);
+        }
 
         return new Interviewer(agent, agentRunner, interviewSessionId, userId,
                 teamDef.getMainAgent().getKey(), agentSessionId, userIdStr);

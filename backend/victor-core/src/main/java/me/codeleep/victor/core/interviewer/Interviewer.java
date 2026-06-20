@@ -90,7 +90,8 @@ public class Interviewer {
     public static final String VAR_INTERVIEWER = "__interviewer";
 
     private AgentContext buildContext(String input) {
-        AgentContext context = new AgentContext(sessionId, userId, input);
+        // 使用 agentSessionId（含 agentKey 后缀），确保 AgentState 读写 key 与上下文注入一致
+        AgentContext context = new AgentContext(agentSessionId, userId, input);
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("agentKey", agentKey);
         context.setMetadata(metadata);

@@ -52,14 +52,20 @@ public class AdvanceQuestionTool implements AgentTool {
                   + "调用后系统自动从预备题库取出下一题并更新面试官记忆,你只需依据返回的题干用自然口吻提问。"
                   + "若返回 finished=true 表示已到最后一题,请据此结束本次面试。")
     public Object advanceToNextQuestion(RuntimeContext runtimeContext) {
-        if (runtimeContext == null || runtimeContext.getSessionId() == null) {
+        // 从 Interviewer 实例获取业务 sessionId（RuntimeContext.sessionId 现在是 agentSessionId，不可直接解析）
+        Interviewer interviewer = extractInterviewer(runtimeContext);
+        if (interviewer == null) {
             return errorResult("面试上下文缺失,无法推进");
+        }
+        String sessionIdStr = interviewer.getSessionId();
+        if (sessionIdStr == null) {
+            return errorResult("面试会话ID无效");
         }
         long sessionId;
         try {
-            sessionId = Long.parseLong(runtimeContext.getSessionId());
+            sessionId = Long.parseLong(sessionIdStr);
         } catch (NumberFormatException e) {
-            return errorResult("面试会话ID无效: " + runtimeContext.getSessionId());
+            return errorResult("面试会话ID无效: " + sessionIdStr);
         }
 
         InterviewConfig config = interviewConfigMapper.selectById(sessionId);
@@ -81,14 +87,11 @@ public class AdvanceQuestionTool implements AgentTool {
         interviewConfigMapper.updateById(config);
 
         // 同步面试官 Agent 的当前题目记忆(避免 Agent 仍以为在旧题上)
-        Interviewer interviewer = extractInterviewer(runtimeContext);
-        if (interviewer != null) {
-            try {
-                interviewer.updateCurrentQuestion(
-                        interviewContextBuilder.buildCurrentQuestionContext(config, next));
-            } catch (Exception e) {
-                log.warn("[AdvanceQuestionTool] 更新面试官题目记忆失败: sessionId={}", sessionId, e);
-            }
+        try {
+            interviewer.updateCurrentQuestion(
+                    interviewContextBuilder.buildCurrentQuestionContext(config, next));
+        } catch (Exception e) {
+            log.warn("[AdvanceQuestionTool] 更新面试官题目记忆失败: sessionId={}", sessionId, e);
         }
 
         log.info("[AdvanceQuestionTool] 推进到下一题: sessionId={}, questionId={}, order={}",

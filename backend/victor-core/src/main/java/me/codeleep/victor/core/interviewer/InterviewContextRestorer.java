@@ -126,7 +126,7 @@ public class InterviewContextRestorer {
             question = questionMapper.selectOne(
                     new LambdaQueryWrapper<InterviewQuestion>()
                             .eq(InterviewQuestion::getConfigId, config.getId())
-                            .orderByAsc(InterviewQuestion::getCreatedAt)
+                            .orderByAsc(InterviewQuestion::getOrderIndex)
                             .last("LIMIT 1")
             );
             if (question != null && !question.getId().equals(config.getCurrentQuestionId())) {
