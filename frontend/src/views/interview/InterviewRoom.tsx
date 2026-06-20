@@ -214,6 +214,7 @@ export default function InterviewRoom() {
   const isLoadingRef = useRef(false)
   const isVoiceModeRef = useRef(false)
   const sessionStatusRef = useRef<SessionStatus>('IN_PROGRESS')
+  const aiStreamingRef = useRef(false)
 
   const [isVoiceMode, setIsVoiceMode] = useState(false)
   const canInput = sessionStatus === 'IN_PROGRESS' && wsConnected
@@ -275,6 +276,10 @@ export default function InterviewRoom() {
     sessionStatusRef.current = sessionStatus
   }, [sessionStatus])
 
+  useEffect(() => {
+    aiStreamingRef.current = aiStreaming
+  }, [aiStreaming])
+
   // Scroll to bottom
   const scrollToBottom = useCallback(() => {
     setTimeout(() => {
@@ -283,6 +288,42 @@ export default function InterviewRoom() {
       }
     }, 50)
   }, [])
+
+  // Whether the conversation is scrolled to (near) the bottom
+  const isAtBottom = useCallback(() => {
+    const el = conversationRef.current
+    if (!el) return true
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }, [])
+
+  // Map backend turn list to chat messages
+  const mapTurns = useCallback((history: InterviewTurnVO[]): ChatMessage[] => {
+    return history.map((h: InterviewTurnVO) => {
+      const legacy = splitLegacyDrawingContent(h.content)
+      return {
+        id: h.id,
+        sessionId: h.sessionId,
+        speaker: h.speaker as ChatMessage['speaker'],
+        content: legacy.content,
+        attachments: normalizeAttachments(h.attachments).length > 0 ? normalizeAttachments(h.attachments) : legacy.attachments,
+        isHint: h.isHint,
+        createdAt: h.createdAt,
+      }
+    })
+  }, [])
+
+  // Refresh conversation history from backend (skipped while AI is streaming)
+  const refreshHistory = useCallback(async () => {
+    if (aiStreamingRef.current) return
+    try {
+      const wasAtBottom = isAtBottom()
+      const history = await interviewSessionApi.getHistory(sessionId)
+      setMessages(mapTurns(history))
+      if (wasAtBottom) scrollToBottom()
+    } catch (e) {
+      console.error('Failed to refresh history:', e)
+    }
+  }, [sessionId, isAtBottom, mapTurns, scrollToBottom])
 
   // Format time
   const formatTime = (seconds: number) => {
@@ -298,6 +339,15 @@ export default function InterviewRoom() {
       cleanup()
     }
   }, [sessionId])
+
+  // Periodically refresh conversation history (every 5s) while interview is in progress
+  useEffect(() => {
+    if (sessionStatus !== 'IN_PROGRESS') return
+    const interval = window.setInterval(() => {
+      refreshHistory()
+    }, 5000)
+    return () => window.clearInterval(interval)
+  }, [sessionStatus, refreshHistory])
 
   const loadSession = async () => {
     try {
@@ -321,18 +371,7 @@ export default function InterviewRoom() {
 
       // Load history
       const history = await interviewSessionApi.getHistory(sessionId)
-      const historyMessages: ChatMessage[] = history.map((h: InterviewTurnVO) => {
-        const legacy = splitLegacyDrawingContent(h.content)
-        return {
-          id: h.id,
-          sessionId: h.sessionId,
-          speaker: h.speaker as ChatMessage['speaker'],
-          content: legacy.content,
-          attachments: normalizeAttachments(h.attachments).length > 0 ? normalizeAttachments(h.attachments) : legacy.attachments,
-          isHint: h.isHint,
-          createdAt: h.createdAt,
-        }
-      })
+      const historyMessages = mapTurns(history)
       setMessages(historyMessages)
       scrollToBottom()
 
