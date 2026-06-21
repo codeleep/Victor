@@ -5,6 +5,7 @@ import me.codeleep.victor.core.interviewer.InterviewContextRestorer;
 import me.codeleep.victor.core.interviewer.InterviewContextResult;
 import me.codeleep.victor.core.interviewer.Interviewer;
 import me.codeleep.victor.web.websocket.processor.ProcessingContext;
+import me.codeleep.victor.web.websocket.processor.StreamChunk;
 import me.codeleep.victor.web.websocket.processor.TextProcessor;
 import me.codeleep.victor.web.websocket.protocol.ClientMessage;
 import me.codeleep.victor.web.websocket.protocol.ServerMessage;
@@ -340,13 +341,13 @@ public class InterviewSession implements Session {
 
             sendMessage(new InterviewServerStreamBeginMessage());
 
-            Flux<String> sentenceFlux = textProcessor.process(processingContext, text);
+            Flux<StreamChunk> chunkFlux = textProcessor.process(processingContext, text);
 
-            sentenceFlux.doOnNext(sentence -> {
+            chunkFlux.doOnNext(chunk -> {
                         if (interruptResponder.isInterrupted(processingId, operationSequence, "LLM_RESPONSE")) {
                             return;
                         }
-                        sendMessage(new InterviewServerStreamChunkMessage(sentence));
+                        sendMessage(new InterviewServerStreamChunkMessage(chunk.text(), chunk.kind(), chunk.tool()));
                     })
                     .doOnComplete(() -> {
                         if (!interruptResponder.isInterrupted(processingId, operationSequence, "LLM_RESPONSE")) {

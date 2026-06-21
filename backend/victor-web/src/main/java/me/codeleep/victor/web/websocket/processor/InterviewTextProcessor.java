@@ -14,13 +14,17 @@ import me.codeleep.victor.core.mapper.InterviewQuestionMapper;
 import me.codeleep.victor.core.mapper.InterviewTurnMapper;
 import me.codeleep.victor.core.service.interview.InterviewService;
 import me.codeleep.victor.infra.agent.core.AgentResult;
+import me.codeleep.victor.web.websocket.protocol.server.interview.InterviewServerStreamChunkMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 面试Agent文本处理器。
@@ -30,6 +34,13 @@ import java.util.List;
  * 处理器在每轮回答后做单题追问次数兜底:达到上限则强制推进,防止面试官死磕一题。</p>
  *
  * <p>题目推进严格基于 interview_question 预备题表,不即时生成新题。</p>
+ *
+ * <p>流式输出策略（降低候选人感知等待延迟）:
+ * <ul>
+ *   <li>THINKING/TOOL_RESULT 事件以细粒度增量实时下发(kind=thinking/tool),让候选人在 Agent 推理阶段即看到反馈;</li>
+ *   <li>ANSWER 事件按完整句子切分下发(kind=answer),供前端展示与 TTS 合成;</li>
+ *   <li>仅 answer 内容落库与喂 TTS,thinking/tool 不入库不合成。</li>
+ * </ul>
  *
  * <p>配置方式：{@code speech.processor=interview}</p>
  */
@@ -62,7 +73,7 @@ public class InterviewTextProcessor implements TextProcessor {
     }
 
     @Override
-    public Flux<String> process(ProcessingContext context, String text) {
+    public Flux<StreamChunk> process(ProcessingContext context, String text) {
         log.info("[Interview] Processing: sessionId={}, text={}", context.getSessionId(), text);
 
         final Long interviewSessionId = context.getAttribute(ProcessingContext.ATTR_INTERVIEW_SESSION_ID);
@@ -87,15 +98,103 @@ public class InterviewTextProcessor implements TextProcessor {
                 }
 
                 // 2.Agent 自主评估追问价值:有则追问,无则调用 advance_to_next_question 工具切下一题
+                //    thinking/tool 增量实时下发;answer 按句切分下发,并累积用于落库。
                 StringBuilder sentenceBuffer = new StringBuilder();
                 StringBuilder fullResponse = new StringBuilder();
+                StringBuilder thinkingBuffer = new StringBuilder();
+                StringBuilder toolBuffer = new StringBuilder();
+                List<Map<String, Object>> toolEventsForPersist = new ArrayList<>();
 
                 interviewer.chat(text)
                         .doOnNext(result -> {
-                            if (result.getType() == AgentResult.EventType.ANSWER
-                                    && result.getContent() != null && !result.getContent().isEmpty()) {
-                                sentenceBuffer.append(result.getContent());
-                                fullResponse.append(result.getContent());
+                            AgentResult.EventType type = result.getType();
+                            String content = result.getContent();
+                            // [DEBUG] 诊断事件分流:打印每个事件的类型/来源/工具事件
+                            log.info("[Interview][DEBUG] event: type={}, sourceAgent={}, depth={}, contentLen={}, toolEvents={}",
+                                    type, result.getSourceAgentKey(), result.getAgentDepth(),
+                                    content == null ? 0 : content.length(),
+                                    result.getToolEvents() == null ? 0 : result.getToolEvents().size());
+
+                            // 推理思考:细粒度增量直发思考文本,让候选人立即看到 Agent 在思考;
+                            // 同时该事件可能携带工具调用(call)块,一并结构化下发。
+                            if (type == AgentResult.EventType.THINKING) {
+                                // 先发思考文本(符合“先思考再行动”的自然顺序),
+                                // 再发该事件携带的工具调用(call)块。
+                                if (content != null && !content.isEmpty()) {
+                                    thinkingBuffer.append(content);
+                                    emitter.next(new StreamChunk(content,
+                                            InterviewServerStreamChunkMessage.Kind.THINKING));
+                                }
+                                List<AgentResult.ToolEvent> toolCallEvents = result.getToolEvents();
+                                if (toolCallEvents != null && !toolCallEvents.isEmpty()) {
+                                    for (AgentResult.ToolEvent te : toolCallEvents) {
+                                        InterviewServerStreamChunkMessage.ToolData td =
+                                                new InterviewServerStreamChunkMessage.ToolData(
+                                                        te.getName(), te.getArgs(), te.getResult());
+                                        emitter.next(new StreamChunk(null,
+                                                InterviewServerStreamChunkMessage.Kind.TOOL_CALL, td));
+                                        Map<String, Object> eventMap = new HashMap<>();
+                                        eventMap.put("name", te.getName());
+                                        if (te.getArgs() != null && !te.getArgs().isEmpty()) {
+                                            eventMap.put("args", te.getArgs());
+                                        }
+                                        eventMap.put("type", "call");
+                                        toolEventsForPersist.add(eventMap);
+                                        appendToolSummary(toolBuffer, te);
+                                    }
+                                }
+                                return;
+                            }
+
+                            // 工具调用/结果:结构化下发,前端渲染为可展开卡片(name+args/result)
+                            if (type == AgentResult.EventType.TOOL_RESULT
+                                    || type == AgentResult.EventType.TOOL_CALL) {
+                                List<AgentResult.ToolEvent> toolEvents = result.getToolEvents();
+                                if (toolEvents != null && !toolEvents.isEmpty()) {
+                                    for (AgentResult.ToolEvent te : toolEvents) {
+                                        InterviewServerStreamChunkMessage.Kind tk = te.isResultEvent()
+                                                ? InterviewServerStreamChunkMessage.Kind.TOOL_RESULT
+                                                : InterviewServerStreamChunkMessage.Kind.TOOL_CALL;
+                                        InterviewServerStreamChunkMessage.ToolData td =
+                                                new InterviewServerStreamChunkMessage.ToolData(
+                                                        te.getName(), te.getArgs(), te.getResult());
+                                        emitter.next(new StreamChunk(null, tk, td));
+                                        // 累积结构化工具事件用于落库
+                                        Map<String, Object> eventMap = new HashMap<>();
+                                        eventMap.put("name", te.getName());
+                                        if (te.getArgs() != null && !te.getArgs().isEmpty()) {
+                                            eventMap.put("args", te.getArgs());
+                                        }
+                                        if (te.isResultEvent()) {
+                                            eventMap.put("type", "result");
+                                            if (te.getResult() != null) {
+                                                eventMap.put("result", te.getResult());
+                                            }
+                                        } else {
+                                            eventMap.put("type", "call");
+                                        }
+                                        toolEventsForPersist.add(eventMap);
+                                        // 累积工具摘要用于落库 reasoning
+                                        appendToolSummary(toolBuffer, te);
+                                    }
+                                } else if (content != null && !content.isEmpty()) {
+                                    // 兜底:无结构化数据时退化为文本
+                                    if (toolBuffer.length() > 0) {
+                                        toolBuffer.append('\n');
+                                    }
+                                    toolBuffer.append(content);
+                                    emitter.next(new StreamChunk(content,
+                                            type == AgentResult.EventType.TOOL_RESULT
+                                                    ? InterviewServerStreamChunkMessage.Kind.TOOL_RESULT
+                                                    : InterviewServerStreamChunkMessage.Kind.TOOL_CALL));
+                                }
+                                return;
+                            }
+// 最终回答:按完整句子切分下发,同时累积全文用于落库
+                            if (type == AgentResult.EventType.ANSWER
+                                    && content != null && !content.isEmpty()) {
+                                sentenceBuffer.append(content);
+                                fullResponse.append(content);
 
                                 String buffered = sentenceBuffer.toString();
                                 int lastSplit = StrUtil.findLastSentenceEnd(buffered);
@@ -106,7 +205,8 @@ public class InterviewTextProcessor implements TextProcessor {
 
                                     for (String sentence : StrUtil.splitSentences(sentences)) {
                                         if (!sentence.trim().isEmpty()) {
-                                            emitter.next(sentence.trim());
+                                            emitter.next(new StreamChunk(sentence.trim(),
+                                                    InterviewServerStreamChunkMessage.Kind.ANSWER));
                                         }
                                     }
                                 }
@@ -117,14 +217,16 @@ public class InterviewTextProcessor implements TextProcessor {
                                 String remaining = sentenceBuffer.toString().trim();
                                 if (!remaining.isEmpty()) {
                                     fullResponse.append(remaining);
-                                    emitter.next(remaining);
+                                    emitter.next(new StreamChunk(remaining,
+                                            InterviewServerStreamChunkMessage.Kind.ANSWER));
                                 }
                             }
 
                             // 持久化面试官回复(题目可能已被 Agent 工具切换,按 DB 当前题 ID 落库)
                             Long spokenQuestionId = resolveCurrentQuestionId(interviewSessionId, currentQuestionId);
                             if (interviewSessionId != null && !fullResponse.isEmpty()) {
-                                saveTurn(interviewSessionId, spokenQuestionId, Speaker.AI, fullResponse.toString(), null);
+                                String reasoning = buildReasoning(thinkingBuffer, toolBuffer);
+                                saveTurn(interviewSessionId, spokenQuestionId, Speaker.AI, fullResponse.toString(), null, reasoning, toolEventsForPersist);
                             }
                             // 同步 ProcessingContext 的当前题目 ID
                             if (spokenQuestionId != null && !spokenQuestionId.equals(currentQuestionId)) {
@@ -206,6 +308,16 @@ public class InterviewTextProcessor implements TextProcessor {
     }
 
     private void saveTurn(Long interviewSessionId, Long questionId, Speaker speaker, String content, List<Object> attachments) {
+        saveTurn(interviewSessionId, questionId, speaker, content, attachments, null, null);
+    }
+
+    private void saveTurn(Long interviewSessionId, Long questionId, Speaker speaker, String content,
+                          List<Object> attachments, String reasoning) {
+        saveTurn(interviewSessionId, questionId, speaker, content, attachments, reasoning, null);
+    }
+
+    private void saveTurn(Long interviewSessionId, Long questionId, Speaker speaker, String content,
+                          List<Object> attachments, String reasoning, List<Map<String, Object>> toolEvents) {
         try {
             if (questionId == null) {
                 log.warn("[Interview] Skip saving turn because current question is missing: sessionId={}, speaker={}",
@@ -219,12 +331,66 @@ public class InterviewTextProcessor implements TextProcessor {
             turn.setSpeaker(speaker);
             turn.setContent(content);
             turn.setAttachments(attachments);
+            turn.setReasoning(reasoning);
+            if (toolEvents != null) {
+                List<Object> boxed = new ArrayList<>(toolEvents.size());
+                boxed.addAll(toolEvents);
+                turn.setToolEvents(boxed);
+            }
             turn.setIsFollowup(false);
             turn.setIsHint(false);
             turnMapper.insert(turn);
         } catch (Exception e) {
             log.error("[Interview] Failed to save turn: sessionId={}, speaker={}", interviewSessionId, speaker, e);
         }
+    }
+
+    /**
+     * 将结构化工具事件转为摘要文本追加到 toolBuffer，供落库 reasoning。
+     * 调用记为"工具名(参数)"，结果记为"工具名 -> 结果摘要"。
+     */
+    private void appendToolSummary(StringBuilder toolBuffer, AgentResult.ToolEvent te) {
+        if (te == null) {
+            return;
+        }
+        if (toolBuffer.length() > 0) {
+            toolBuffer.append('\n');
+        }
+        if (te.isResultEvent()) {
+            toolBuffer.append(te.getName()).append(" -> ");
+            String result = te.getResult();
+            if (result != null && result.length() > 200) {
+                result = result.substring(0, 200) + "...";
+            }
+            toolBuffer.append(result == null ? "" : result);
+        } else {
+            toolBuffer.append(te.getName());
+            if (te.getArgs() != null && !te.getArgs().isEmpty()) {
+                toolBuffer.append("(").append(te.getArgs()).append(")");
+            }
+        }
+    }
+    /**
+     * 合并本轮推理内容（thinking + tool）为落库文本。
+     * thinking 作为正文；tool 作为"工具调用"小节追加。
+     */
+    private String buildReasoning(StringBuilder thinkingBuffer, StringBuilder toolBuffer) {
+        String thinking = thinkingBuffer.toString().trim();
+        String tool = toolBuffer.toString().trim();
+        if (thinking.isEmpty() && tool.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        if (!thinking.isEmpty()) {
+            sb.append(thinking);
+        }
+        if (!tool.isEmpty()) {
+            if (sb.length() > 0) {
+                sb.append("\n\n");
+            }
+            sb.append("### 工具调用\n\n").append(tool);
+        }
+        return sb.toString();
     }
 
     private int nextTurnIndex(Long interviewSessionId) {

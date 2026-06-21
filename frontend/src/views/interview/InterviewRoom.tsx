@@ -19,6 +19,12 @@ import type {
   InterviewAttachment
 } from '@/types'
 import './InterviewRoom.scss'
+import { TaskBlock, type ToolEventItem } from './components/TaskBlock'
+
+interface ThinkingBlock { kind: 'thinking'; text: string; agentName?: string }
+interface ToolBlock { kind: 'tool'; tool: ToolEventItem }
+interface AnswerBlock { kind: 'answer'; text: string }
+type TurnBlock = ThinkingBlock | ToolBlock | AnswerBlock
 
 interface ChatMessage {
   id: number
@@ -28,6 +34,97 @@ interface ChatMessage {
   attachments?: InterviewAttachment[]
   isHint?: boolean
   createdAt: string
+  turnBlocks?: TurnBlock[]
+  reasoning?: string
+  toolEvents?: ToolEventItem[]
+}
+
+// 渲染 AI 回合的有序内容块序列(参考 gemini-cli 布局): 思考边框气泡 + 工具时间线 + 回答 Markdown。
+// 历史回放: 折叠的推理过程区(thinking文本 + 工具时间线), 默认折叠, 点击展开
+// 将历史回放的 reasoning(思考+工具合并文本) + toolEvents + content 还原为 TurnBlock 序列,
+// 使历史与实时统一用 TurnBlocksView 渲染。顺序: 思考块 → 工具块 → 回答块。
+function reasoningToBlocks(reasoning: string | undefined, tools: ToolEventItem[] | undefined, content: string): TurnBlock[] {
+  const blocks: TurnBlock[] = []
+  if (reasoning) {
+    // 后端 buildReasoning 会在思考文本后追加 "### 工具调用", 取该标题之前的纯思考部分
+    const marker = reasoning.indexOf('### 工具调用')
+    const thinking = (marker >= 0 ? reasoning.slice(0, marker) : reasoning).trim()
+    if (thinking) blocks.push({ kind: 'thinking', text: thinking })
+  }
+  if (tools && tools.length > 0) {
+    for (const t of tools) {
+      blocks.push({ kind: 'tool', tool: t })
+    }
+  }
+  if (content && content.trim()) {
+    blocks.push({ kind: 'answer', text: content })
+  }
+  return blocks
+}
+
+function TurnBlocksView({ blocks, streaming }: { blocks: TurnBlock[]; streaming?: boolean }) {
+  const [toolExpanded, setToolExpanded] = useState<Record<number, boolean>>({})
+  const toggleTool = (id: number) => setToolExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  if (blocks.length === 0) return null
+
+  // 拆分: 过程块(思考 + 工具) 与 回答块; 回答始终可见, 过程整体可折叠
+  const processBlocks = blocks.filter(b => b.kind === 'thinking' || b.kind === 'tool')
+  const answerBlocks = blocks.filter(b => b.kind === 'answer')
+  const hasProcess = processBlocks.length > 0
+  const toolCount = processBlocks.filter(b => b.kind === 'tool').length
+  const thinkingCount = processBlocks.filter(b => b.kind === 'thinking').length
+  const answerText = answerBlocks.map(b => (b as AnswerBlock).text).join('')
+
+  // 流式时过程始终展开; 完成后默认折叠, 可点击展开
+  const [processOpen, setProcessOpen] = useState(false)
+  const processExpanded = streaming ? true : processOpen
+
+  return (
+    <div className="turn-blocks">
+      {hasProcess && (
+        <div className="turn-process-card">
+          <button className="turn-process-header" type="button" onClick={() => !streaming && setProcessOpen(v => !v)}>
+            <span className="reasoning-chevron">{processExpanded ? '▾' : '▸'}</span>
+            <span className="turn-process-title">{streaming ? '正在思考...' : '推理过程'}</span>
+            <span className="turn-process-summary">
+              {thinkingCount > 0 && `${thinkingCount} 步思考`}
+              {thinkingCount > 0 && toolCount > 0 && ' · '}
+              {toolCount > 0 && `${toolCount} 个工具调用`}
+            </span>
+          </button>
+          {processExpanded && (
+            <div className="turn-process-body">
+              {processBlocks.map((block, idx) => {
+                if (block.kind === 'thinking') {
+                  return (
+                    <div className="turn-thinking" key={`t-${idx}`}>
+                      <MDEditor.Markdown source={block.text} style={{ background: 'transparent' }} />
+                    </div>
+                  )
+                }
+                // tool: 直接渲染 TaskBlock(带节点连线), 不再套 TaskTimeline 外壳
+                const tool = (block as ToolBlock).tool
+                return (
+                  <div className="turn-tool-item" key={`tool-${idx}`}>
+                    <div className="turn-tool-node" />
+                    <div className="turn-tool-content">
+                      <TaskBlock tool={{ ...tool, expanded: !!toolExpanded[tool.id] }} onToggle={() => toggleTool(tool.id)} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {answerText && (
+        <div className="message-content">
+          <MDEditor.Markdown source={answerText} style={{ background: 'transparent' }} />
+          {streaming && <span className="cursor-blink">|</span>}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function normalizeAttachment(attachment: unknown): InterviewAttachment | undefined {
@@ -181,7 +278,7 @@ export default function InterviewRoom() {
   const [inputText, setInputText] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [aiStreaming, setAiStreaming] = useState(false)
-  const [aiStreamText, setAiStreamText] = useState('')
+  const [aiTurnBlocks, setAiTurnBlocks] = useState<TurnBlock[]>([])
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('IN_PROGRESS')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [wsConnected, setWsConnected] = useState(false)
@@ -209,7 +306,8 @@ export default function InterviewRoom() {
   const excalidrawDataRef = useRef<any>(null)
   const timerRef = useRef<number | null>(null)
   const waitingFirstQuestionRef = useRef(true)
-  const aiStreamTextRef = useRef('')
+  const aiTurnBlocksRef = useRef<TurnBlock[]>([])
+  const toolSeqRef = useRef(0)
   const canInputRef = useRef(false)
   const isLoadingRef = useRef(false)
   const isVoiceModeRef = useRef(false)
@@ -323,6 +421,18 @@ export default function InterviewRoom() {
       const history = await interviewSessionApi.getHistory(sessionId)
       const historyMessages: ChatMessage[] = history.map((h: InterviewTurnVO) => {
         const legacy = splitLegacyDrawingContent(h.content)
+        const rawTools = (h.toolEvents ?? []).map((t, i) => ({
+          id: i + 1,
+          name: t.name,
+          args: t.args,
+          result: t.result,
+          status: 'success' as const,
+          expanded: false,
+        }))
+        // 还原为 TurnBlock 序列, 与实时渲染统一
+        const turnBlocks = (h.speaker === 'AI' || h.speaker === 'INTERVIEWER')
+          ? reasoningToBlocks(h.reasoning, rawTools.length > 0 ? rawTools : undefined, legacy.content)
+          : undefined
         return {
           id: h.id,
           sessionId: h.sessionId,
@@ -331,6 +441,7 @@ export default function InterviewRoom() {
           attachments: normalizeAttachments(h.attachments).length > 0 ? normalizeAttachments(h.attachments) : legacy.attachments,
           isHint: h.isHint,
           createdAt: h.createdAt,
+          turnBlocks: turnBlocks && turnBlocks.length > 0 ? turnBlocks : undefined,
         }
       })
       setMessages(historyMessages)
@@ -492,6 +603,64 @@ export default function InterviewRoom() {
     interviewWsRef.current.connect()
   }
 
+  // 将一个 stream chunk 按 kind 追加到有序内容块序列(参考 gemini-cli 布局)
+  // 同类型连续合并; 工具 call/result 配对合并为单个 ToolEventItem
+  const appendChunkToBlocks = (blocks: TurnBlock[], chunk: InterviewStreamChunkMessage, seq: () => number): TurnBlock[] => {
+    const kind = chunk.kind ?? 'answer'
+    const next = blocks.slice()
+    if (kind === 'thinking') {
+      const text = chunk.text ?? ''
+      const last = next[next.length - 1]
+      if (last && last.kind === 'thinking') {
+        next[next.length - 1] = { ...last, text: last.text + text }
+      } else {
+        next.push({ kind: 'thinking', text })
+      }
+      return next
+    }
+    if (kind === 'answer') {
+      const text = chunk.text ?? ''
+      const last = next[next.length - 1]
+      if (last && last.kind === 'answer') {
+        next[next.length - 1] = { ...last, text: last.text + text }
+      } else {
+        next.push({ kind: 'answer', text })
+      }
+      return next
+    }
+    // tool_call / tool_result: 尽量与前一个同名 call 配对
+    const tool = chunk.tool
+    const name = tool?.name ?? '未知工具'
+    if (kind === 'tool_call') {
+      next.push({
+        kind: 'tool',
+        tool: { id: seq(), name, args: tool?.args, status: 'running', expanded: false },
+      })
+      return next
+    }
+    // tool_result: 找最近一个同名且 running 的 call, 补充结果
+    const idx = [...next].reverse().findIndex(b => b.kind === 'tool' && b.tool.name === name && b.tool.status === 'running')
+    if (idx >= 0) {
+      const realIdx = next.length - 1 - idx
+      const tb = next[realIdx] as ToolBlock
+      next[realIdx] = {
+        kind: 'tool',
+        tool: { ...tb.tool, result: tool?.result, status: tool?.result ? 'success' : 'success' },
+      }
+    } else {
+      // 未找到配对 call(丢失), 直接作为单独工具块
+      next.push({
+        kind: 'tool',
+        tool: { id: seq(), name, result: tool?.result, status: 'success', expanded: false },
+      })
+    }
+    return next
+  }
+
+  // 从内容块序列提取 answer 文本(用于落库 content 与 TTS)
+  const extractAnswerText = (blocks: TurnBlock[]): string =>
+    blocks.filter(b => b.kind === 'answer').map(b => (b as AnswerBlock).text).join('').trim()
+
   // Interview message handler
   const handleInterviewMessage = (msg: InterviewServerMessage) => {
     switch (msg.type) {
@@ -508,34 +677,39 @@ export default function InterviewRoom() {
         break
       }
       case 'interview.stream_begin':
-        aiStreamTextRef.current = ''
+        aiTurnBlocksRef.current = []
+        toolSeqRef.current = 0
         setAiStreaming(true)
-        setAiStreamText('')
+        setAiTurnBlocks([])
         isLoadingRef.current = false
         setIsLoading(false)
         break
       case 'interview.stream_chunk': {
         const m = msg as InterviewStreamChunkMessage
-        const nextText = aiStreamTextRef.current + m.text
-        aiStreamTextRef.current = nextText
-        setAiStreamText(nextText)
+        // 按 kind 分流到不同内容块: thinking/tool/answer 各成独立区块
+        const blocks = appendChunkToBlocks(aiTurnBlocksRef.current, m, () => ++toolSeqRef.current)
+        aiTurnBlocksRef.current = blocks
+        setAiTurnBlocks(blocks)
         scrollToBottom()
         break
       }
-      case 'interview.stream_end':
-        if (aiStreamTextRef.current) {
+      case 'interview.stream_end': {
+        const blocks = aiTurnBlocksRef.current
+        const answerText = extractAnswerText(blocks)
+        if (answerText || blocks.length > 0) {
           const aiMsg: ChatMessage = {
             id: Date.now(),
             sessionId,
             speaker: 'AI',
-            content: aiStreamTextRef.current,
+            content: answerText,
+            turnBlocks: blocks.length > 0 ? blocks : undefined,
             createdAt: new Date().toISOString(),
           }
           setMessages(prev => [...prev, aiMsg])
 
-          // TTS
-          if (isVoiceModeRef.current && ttsWsRef.current?.connected) {
-            const ttsText = stripMarkdown(aiStreamTextRef.current)
+          // TTS: 只朗读 answer 块文本, thinking/tool 不朗读
+          if (isVoiceModeRef.current && ttsWsRef.current?.connected && answerText) {
+            const ttsText = stripMarkdown(answerText)
             if (ttsText) {
               ttsWsRef.current.sendJson({ type: 'tts.stream_begin' })
               ttsWsRef.current.sendJson({ type: 'tts.stream_chunk', text: ttsText })
@@ -544,10 +718,11 @@ export default function InterviewRoom() {
           }
         }
         setAiStreaming(false)
-        aiStreamTextRef.current = ''
-        setAiStreamText('')
+        aiTurnBlocksRef.current = []
+        setAiTurnBlocks([])
         scrollToBottom()
         break
+      }
       case 'interview.reconnected': {
         const m = msg as InterviewReconnectedMessage
         message.info(`重连成功，历史对话 ${m.historyTurns} 轮`)
@@ -669,8 +844,8 @@ export default function InterviewRoom() {
     if (interviewWsRef.current?.connected) {
       interviewWsRef.current.sendJson({ type: 'interview.interrupt', interruptType: 'LLM_RESPONSE' })
       setAiStreaming(false)
-      aiStreamTextRef.current = ''
-      setAiStreamText('')
+      aiTurnBlocksRef.current = []
+      setAiTurnBlocks([])
       isLoadingRef.current = false
       setIsLoading(false)
     }
@@ -778,14 +953,16 @@ export default function InterviewRoom() {
                     {getSenderName(msg)}
                     {msg.isHint && <span className="hint-tag">提示</span>}
                   </div>
-                  {(msg.content || !msg.attachments?.length) && (
+                  {(msg.speaker === 'AI' || msg.speaker === 'INTERVIEWER') && msg.turnBlocks && msg.turnBlocks.length > 0 ? (
+                    <TurnBlocksView blocks={msg.turnBlocks} />
+                  ) : (msg.content || !msg.attachments?.length) ? (
                     <div className="message-content">
                       <MDEditor.Markdown
                         source={msg.content}
                         style={{ background: 'transparent' }}
                       />
                     </div>
-                  )}
+                  ) : null}
                   {msg.speaker === 'USER' && Boolean(msg.attachments?.length) && (
                     <div className="attachment-chip-row">
                       {msg.attachments?.map((attachment, attachmentIndex) => (
@@ -812,10 +989,13 @@ export default function InterviewRoom() {
                 <div className="message-avatar">AI</div>
                 <div className="message-body">
                   <div className="message-sender">面试官</div>
-                  <div className="message-content streaming">
-                    <MDEditor.Markdown source={aiStreamText} style={{ background: 'transparent' }} />
-                    <span className="cursor-blink">|</span>
-                  </div>
+                  {aiTurnBlocks.length > 0 ? (
+                    <TurnBlocksView blocks={aiTurnBlocks} streaming />
+                  ) : (
+                    <div className="message-content streaming">
+                      <span className="cursor-blink">|</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

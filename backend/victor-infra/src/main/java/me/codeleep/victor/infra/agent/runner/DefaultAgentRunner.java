@@ -2,11 +2,14 @@ package me.codeleep.victor.infra.agent.runner;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventSource;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -98,17 +101,36 @@ public class DefaultAgentRunner implements AgentRunner {
         r.setSuccess(true);
         r.setLast(event.isLast());
 
+        // 透传事件来源(主/子 Agent)，供前端区分渲染与嵌套
+        EventSource source = event.getSource();
+        if (source != null) {
+            // 主 Agent(sourceAgentKey 与顶层 agentKey 相同或 depth=0)不填充展示名,
+            // 仅子 Agent(depth>=1)填充名称,前端据此独立成块。
+            Integer depth = source.getDepth();
+            r.setAgentDepth(depth);
+            if (depth != null && depth >= 1) {
+                r.setSourceAgentName(source.getAgentName());
+                // 子 Agent 事件用其自身的 agentKey 作为来源,便于前端归类
+                if (source.getAgentKey() != null) {
+                    r.setSourceAgentKey(source.getAgentKey());
+                }
+            }
+        }
+
         Msg msg = event.getMessage();
         EventType type = event.getType();
         if (type == EventType.REASONING) {
             r.setType(AgentResult.EventType.THINKING);
             r.setContent(extractThinking(msg));
+            r.setToolEvents(extractToolCallEvents(msg));
         } else if (type == EventType.TOOL_RESULT) {
             r.setType(AgentResult.EventType.TOOL_RESULT);
             r.setContent(extractToolResult(msg));
+            r.setToolEvents(extractToolResultEvents(msg));
         } else if (type == EventType.AGENT_RESULT || type == EventType.SUMMARY) {
             r.setType(AgentResult.EventType.ANSWER);
-            r.setContent(extractToolCalls(msg, msg != null ? msg.getTextContent() : null));
+            // 最终回答只取纯文本,不再混入工具调用描述(工具由独立事件/ToolEvent 承载)
+            r.setContent(msg != null ? msg.getTextContent() : null);
         } else {
             r.setType(AgentResult.EventType.THINKING);
             r.setContent(msg != null ? msg.getTextContent() : null);
@@ -144,18 +166,63 @@ public class DefaultAgentRunner implements AgentRunner {
         return sb.toString().trim();
     }
 
-    private String extractToolCalls(Msg msg, String fallback) {
+
+    /**
+     * 提取结构化工具调用事件（工具名 + 入参），供前端卡片化展示。
+     */
+    private List<AgentResult.ToolEvent> extractToolCallEvents(Msg msg) {
+        List<AgentResult.ToolEvent> events = new ArrayList<>();
         if (msg == null) {
-            return fallback;
+            return events;
         }
         List<ToolUseBlock> blocks = msg.getContentBlocks(ToolUseBlock.class);
         if (blocks == null || blocks.isEmpty()) {
-            return fallback;
+            return events;
+        }
+        for (ToolUseBlock tb : blocks) {
+            AgentResult.ToolEvent e = new AgentResult.ToolEvent();
+            e.setName(tb.getName());
+            e.setArgs(tb.getInput());
+            e.setResultEvent(false);
+            events.add(e);
+        }
+        return events;
+    }
+
+    /**
+     * 提取结构化工具结果事件（工具名 + 结果文本），供前端卡片化展示。
+     */
+    private List<AgentResult.ToolEvent> extractToolResultEvents(Msg msg) {
+        List<AgentResult.ToolEvent> events = new ArrayList<>();
+        if (msg == null) {
+            return events;
+        }
+        List<ToolResultBlock> blocks = msg.getContentBlocks(ToolResultBlock.class);
+        if (blocks == null || blocks.isEmpty()) {
+            return events;
+        }
+        for (ToolResultBlock tb : blocks) {
+            AgentResult.ToolEvent e = new AgentResult.ToolEvent();
+            e.setName(tb.getName());
+            e.setResult(extractToolResultText(tb));
+            e.setResultEvent(true);
+            events.add(e);
+        }
+        return events;
+    }
+
+    private String extractToolResultText(ToolResultBlock tr) {
+        if (tr.getOutput() == null || tr.getOutput().isEmpty()) {
+            return "";
         }
         StringBuilder sb = new StringBuilder();
-        for (ToolUseBlock tb : blocks) {
-            sb.append(tb.getName()).append("(").append(tb.getInput()).append(")\n");
+        for (ContentBlock b : tr.getOutput()) {
+            if (b instanceof TextBlock tb) {
+                sb.append(tb.getText());
+            } else {
+                sb.append(b.toString());
+            }
         }
-        return sb.toString().trim();
+        return sb.toString();
     }
 }

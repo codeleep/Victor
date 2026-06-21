@@ -358,6 +358,8 @@ CREATE TABLE interview_turn (
     speaker VARCHAR(20) NOT NULL,
     is_followup BOOLEAN DEFAULT FALSE,
     content TEXT,
+    reasoning TEXT,
+    tool_events JSONB DEFAULT '[]',
     attachments JSONB DEFAULT '[]',
     is_hint BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -365,6 +367,8 @@ CREATE TABLE interview_turn (
 );
 
 COMMENT ON COLUMN interview_turn.attachments IS '附件数组，支持AUDIO、IMAGE、CODE、MERMAID等类型';
+COMMENT ON COLUMN interview_turn.tool_events IS 'AI 回合的结构化工具事件列表，前端渲染为任务块时间线';
+COMMENT ON COLUMN interview_turn.reasoning IS 'AI 回合的推理过程文本（thinking+tool），供前端折叠展示；用户回合为空';
 
 CREATE INDEX idx_turn_session_id ON interview_turn (session_id);
 CREATE INDEX idx_turn_question_id ON interview_turn (question_id);

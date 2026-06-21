@@ -2,7 +2,9 @@ package me.codeleep.victor.infra.agent.core;
 
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -39,6 +41,16 @@ public class AgentResult {
     private String sourceAgentKey;
 
     /**
+     * 事件来源 Agent 名称（子 Agent 的展示名，主 Agent 时为 null）
+     */
+    private String sourceAgentName;
+
+    /**
+     * 事件来源 Agent 深度（主 Agent depth=0，子 Agent depth>=1），用于前端嵌套渲染
+     */
+    private Integer agentDepth;
+
+    /**
      * 是否为流的最后一项
      */
     private boolean last;
@@ -47,6 +59,11 @@ public class AgentResult {
      * 元数据
      */
     private Map<String, Object> metadata;
+
+    /**
+     * 结构化工具事件（type=TOOL_CALL/TOOL_RESULT 时填充），供前端卡片化展示
+     */
+    private List<ToolEvent> toolEvents;
 
     public AgentResult() {
         this.success = true;
@@ -88,5 +105,21 @@ public class AgentResult {
         ERROR,
         /** 流结束 */
         DONE
+    }
+
+    /**
+     * 结构化工具事件，供前端以卡片形式展示工具调用（名称+参数）与结果。
+     * 一个 AgentResult 可携带多个 ToolEvent（一条消息含多个工具块时）。
+     */
+    @Data
+    public static class ToolEvent {
+        /** 工具名，如 advance_to_next_question / resource_query */
+        private String name;
+        /** 工具入参（已解析为 Map） */
+        private Map<String, Object> args;
+        /** 工具结果文本（TOOL_RESULT 时填充） */
+        private String result;
+        /** 是否为调用结果（true=结果，false=调用） */
+        private boolean resultEvent;
     }
 }

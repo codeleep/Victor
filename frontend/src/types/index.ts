@@ -381,9 +381,20 @@ export interface InterviewTurnVO {
   speaker: Speaker
   isFollowup?: boolean
   content: string
+  /** 推理过程文本（仅 AI turn），前端折叠展示 */
+  reasoning?: string
+  /** 结构化工具事件列表（仅 AI turn），前端渲染为任务块时间线 */
+  toolEvents?: ToolEventItem[]
   attachments?: InterviewAttachment[]
   isHint?: boolean
   createdAt: string
+}
+
+export interface ToolEventItem {
+  name: string
+  args?: Record<string, unknown>
+  result?: string
+  type: 'call' | 'result'
 }
 
 export interface InterviewAttachment {
@@ -527,9 +538,19 @@ export interface InterviewStreamBeginMessage {
   type: 'interview.stream_begin'
 }
 
+export interface ToolData {
+  name: string
+  args?: Record<string, unknown>
+  result?: string
+}
+
 export interface InterviewStreamChunkMessage {
   type: 'interview.stream_chunk'
-  text: string
+  text?: string
+  /** 片段种类：answer/thinking/tool_call/tool_result，缺省视为 answer */
+  kind?: 'answer' | 'thinking' | 'tool_call' | 'tool_result'
+  /** 工具结构化数据（tool_call/tool_result 时携带） */
+  tool?: ToolData
   attachments?: InterviewAttachment[]
 }
 
