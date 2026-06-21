@@ -184,6 +184,7 @@ public class DefaultAgentRunner implements AgentRunner {
             e.setName(tb.getName());
             e.setArgs(tb.getInput());
             e.setResultEvent(false);
+            e.setToolCallId(tb.getId());
             events.add(e);
         }
         return events;
@@ -206,6 +207,7 @@ public class DefaultAgentRunner implements AgentRunner {
             e.setName(tb.getName());
             e.setResult(extractToolResultText(tb));
             e.setResultEvent(true);
+            e.setToolCallId(tb.getId());
             events.add(e);
         }
         return events;

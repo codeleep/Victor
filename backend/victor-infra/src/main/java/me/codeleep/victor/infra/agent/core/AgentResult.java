@@ -121,5 +121,7 @@ public class AgentResult {
         private String result;
         /** 是否为调用结果（true=结果，false=调用） */
         private boolean resultEvent;
+        /** 工具调用唯一 ID（来自 ToolUseBlock/ToolResultBlock.getId()），用于流式去重 */
+        private String toolCallId;
     }
 }

@@ -63,8 +63,8 @@ function reasoningToBlocks(reasoning: string | undefined, tools: ToolEventItem[]
 }
 
 function TurnBlocksView({ blocks, streaming }: { blocks: TurnBlock[]; streaming?: boolean }) {
-  const [toolExpanded, setToolExpanded] = useState<Record<number, boolean>>({})
-  const toggleTool = (id: number) => setToolExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  const [toolExpanded, setToolExpanded] = useState<Record<number | string, boolean>>({})
+  const toggleTool = (id: number | string) => setToolExpanded(prev => ({ ...prev, [id]: !prev[id] }))
   if (blocks.length === 0) return null
 
   // 拆分: 过程块(思考 + 工具) 与 回答块; 回答始终可见, 过程整体可折叠
@@ -628,24 +628,41 @@ export default function InterviewRoom() {
       }
       return next
     }
-    // tool_call / tool_result: 尽量与前一个同名 call 配对
+    // tool_call / tool_result: 按 tool.id 去重(流式增量会重复下发同一工具调用,取最新覆盖)
     const tool = chunk.tool
     const name = tool?.name ?? '未知工具'
+    const toolId = tool?.id
     if (kind === 'tool_call') {
-      next.push({
-        kind: 'tool',
-        tool: { id: seq(), name, args: tool?.args, status: 'running', expanded: false },
-      })
+      // 已存在同 id 的工具块: 用最新 args 覆盖(流式参数逐步累积完整)
+      const existIdx = toolId ? next.findIndex(b => b.kind === 'tool' && String(b.tool.id) === toolId) : -1
+      if (existIdx >= 0) {
+        const old = next[existIdx] as ToolBlock
+        next[existIdx] = { kind: 'tool', tool: { ...old.tool, name, args: tool?.args ?? old.tool.args } }
+      } else {
+        next.push({
+          kind: 'tool',
+          tool: { id: toolId ?? seq(), name, args: tool?.args, status: 'running', expanded: false },
+        })
+      }
       return next
     }
-    // tool_result: 找最近一个同名且 running 的 call, 补充结果
-    const idx = [...next].reverse().findIndex(b => b.kind === 'tool' && b.tool.name === name && b.tool.status === 'running')
-    if (idx >= 0) {
+    // tool_result: 优先按 id 配对,其次按同名 running 的 call, 补充结果
+    const idIdx = toolId ? next.findIndex(b => b.kind === 'tool' && String(b.tool.id) === toolId) : -1
+    const idx = idIdx >= 0
+      ? -1
+      : [...next].reverse().findIndex(b => b.kind === 'tool' && b.tool.name === name && b.tool.status === 'running')
+    if (idIdx >= 0) {
+      const tb = next[idIdx] as ToolBlock
+      next[idIdx] = {
+        kind: 'tool',
+        tool: { ...tb.tool, result: tool?.result, status: 'success' },
+      }
+    } else if (idx >= 0) {
       const realIdx = next.length - 1 - idx
       const tb = next[realIdx] as ToolBlock
       next[realIdx] = {
         kind: 'tool',
-        tool: { ...tb.tool, result: tool?.result, status: tool?.result ? 'success' : 'success' },
+        tool: { ...tb.tool, result: tool?.result, status: 'success' },
       }
     } else {
       // 未找到配对 call(丢失), 直接作为单独工具块

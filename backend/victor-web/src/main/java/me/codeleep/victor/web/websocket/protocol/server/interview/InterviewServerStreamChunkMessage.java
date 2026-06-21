@@ -75,11 +75,17 @@ public class InterviewServerStreamChunkMessage extends BaseServerMessage {
      * 结构化工具数据，供前端卡片化展示工具调用（名称+参数）与结果。
      */
     public static class ToolData {
+        private final String id;
         private final String name;
         private final Map<String, Object> args;
         private final String result;
 
         public ToolData(String name, Map<String, Object> args, String result) {
+            this(null, name, args, result);
+        }
+
+        public ToolData(String id, String name, Map<String, Object> args, String result) {
+            this.id = id;
             this.name = name;
             this.args = args;
             this.result = result;
@@ -87,6 +93,9 @@ public class InterviewServerStreamChunkMessage extends BaseServerMessage {
 
         public Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
+            if (id != null) {
+                m.put("id", id);
+            }
             m.put("name", name);
             if (args != null) {
                 m.put("args", args);

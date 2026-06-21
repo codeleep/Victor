@@ -5,7 +5,7 @@ import React, { useState } from 'react'
  * call/result 经合并后：每条代表一次工具调用，含入参与结果。
  */
 export interface ToolEventItem {
-  id: number
+  id: number | string
   /** 工具原始名，如 advance_to_next_question / resource_query */
   name: string
   /** 结构化入参 */
@@ -189,7 +189,7 @@ export function TaskBlock({ tool, onToggle }: TaskBlockProps) {
 
 interface TaskTimelineProps {
   tools: ToolEventItem[]
-  onToggle: (id: number) => void
+  onToggle: (id: number | string) => void
 }
 
 /**

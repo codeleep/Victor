@@ -128,9 +128,11 @@ public class InterviewTextProcessor implements TextProcessor {
                                 List<AgentResult.ToolEvent> toolCallEvents = result.getToolEvents();
                                 if (toolCallEvents != null && !toolCallEvents.isEmpty()) {
                                     for (AgentResult.ToolEvent te : toolCallEvents) {
+                                        // 流式 REASONING 增量会重复携带同一 ToolUseBlock,按 ID 去重
+                                        String callId = te.getToolCallId();
                                         InterviewServerStreamChunkMessage.ToolData td =
                                                 new InterviewServerStreamChunkMessage.ToolData(
-                                                        te.getName(), te.getArgs(), te.getResult());
+                                                        callId, te.getName(), te.getArgs(), te.getResult());
                                         emitter.next(new StreamChunk(null,
                                                 InterviewServerStreamChunkMessage.Kind.TOOL_CALL, td));
                                         Map<String, Object> eventMap = new HashMap<>();
@@ -157,7 +159,7 @@ public class InterviewTextProcessor implements TextProcessor {
                                                 : InterviewServerStreamChunkMessage.Kind.TOOL_CALL;
                                         InterviewServerStreamChunkMessage.ToolData td =
                                                 new InterviewServerStreamChunkMessage.ToolData(
-                                                        te.getName(), te.getArgs(), te.getResult());
+                                                        te.getToolCallId(), te.getName(), te.getArgs(), te.getResult());
                                         emitter.next(new StreamChunk(null, tk, td));
                                         // 累积结构化工具事件用于落库
                                         Map<String, Object> eventMap = new HashMap<>();
