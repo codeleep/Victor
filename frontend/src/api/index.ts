@@ -17,6 +17,7 @@ import type {
   ExperienceRequest,
   AgentVO,
   AgentRequest,
+  ToolVO,
   AgentTeamVO,
   TeamRequest,
   AgentLlmConfigVO,
@@ -186,6 +187,9 @@ export const agentApi = {
   },
   delete(id: number): Promise<void> {
     return request.delete<void>(`/agents/${id}`)
+  },
+  listTools(): Promise<ToolVO[]> {
+    return request.get<ToolVO[]>('/agents/tools')
   }
 }
 

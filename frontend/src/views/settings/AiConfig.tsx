@@ -137,6 +137,8 @@ function AgentPanel() {
   const [data, setData] = useState<AgentVO[]>([])
   const [llmOptions, setLlmOptions] = useState<{ label: string; value: number }[]>([])
   const [llmOptionsLoading, setLlmOptionsLoading] = useState(false)
+  const [toolOptions, setToolOptions] = useState<{ label: string; value: string }[]>([])
+  const [toolOptionsLoading, setToolOptionsLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -161,16 +163,26 @@ function AgentPanel() {
     } catch (e) { console.error(e) } finally { setLlmOptionsLoading(false) }
   }
 
+  const loadToolOptions = async () => {
+    setToolOptionsLoading(true)
+    try {
+      const tools = await agentApi.listTools()
+      setToolOptions(tools.map(t => ({ label: t.name + (t.description ? ' - ' + t.description : ''), value: t.name })))
+    } catch (e) { console.error(e) } finally { setToolOptionsLoading(false) }
+  }
+
   const handleAdd = async () => {
     setEditingId(null); setEditingSystem(false); form.resetFields()
     await loadLlmOptions()
+    await loadToolOptions()
     setModalOpen(true)
   }
   const handleEdit = async (row: AgentVO) => {
     setEditingId(row.id)
     setEditingSystem(!!row.isSystem)
-    form.setFieldsValue({ name: row.name, role: row.role, systemPrompt: row.systemPrompt, type: row.type, llmConfigId: row.llmConfigId })
+    form.setFieldsValue({ name: row.name, role: row.role, systemPrompt: row.systemPrompt, type: row.type, llmConfigId: row.llmConfigId, availableTools: row.availableTools || [] })
     await loadLlmOptions()
+    await loadToolOptions()
     setModalOpen(true)
   }
   const handleSubmit = async () => {
@@ -180,7 +192,7 @@ function AgentPanel() {
         let payload: AgentRequest
         if (editingSystem) {
           // 系统Agent只提交 systemPrompt 和 llmConfigId
-          payload = { name: values.name, systemPrompt: values.systemPrompt, llmConfigId: values.llmConfigId }
+          payload = { name: values.name, systemPrompt: values.systemPrompt, llmConfigId: values.llmConfigId, availableTools: values.availableTools }
         } else {
           payload = values as AgentRequest
         }
@@ -248,6 +260,17 @@ function AgentPanel() {
               notFoundContent={llmOptionsLoading ? '加载中...' : '暂无 LLM 配置'}
               optionFilterProp="label"
               options={llmOptions}
+            />
+          </Form.Item>
+          <Form.Item name="availableTools" label="可用工具">
+            <Select
+              mode="multiple"
+              placeholder="选择该 Agent 可调用的工具"
+              optionFilterProp="label"
+              loading={toolOptionsLoading}
+              options={toolOptions}
+              allowClear
+              style={{ width: '100%' }}
             />
           </Form.Item>
           <Form.Item name="systemPrompt" label="系统提示词">

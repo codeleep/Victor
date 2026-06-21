@@ -11,7 +11,9 @@ import me.codeleep.victor.core.mapper.AgentLlmConfigMapper;
 import me.codeleep.victor.core.mapper.AgentMapper;
 import org.springframework.stereotype.Component;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,8 +41,16 @@ public class AgentDefinitionFactory {
      * 注册工具（由各 AgentTool 实现在容器就绪后自调用）。
      * 读取 @io.agentscope.core.tool.Tool 注解的 name 作为键。
      */
+    /**
+     * 获取所有已注册的工具（工具名 -> 工具实例），供上层（如工具列表接口）反射读取 @Tool 元信息。
+     * 返回不可变视图，防止外部篡改注册表。
+     */
+    public Map<String, Object> getRegisteredTools() {
+        return Collections.unmodifiableMap(registeredTools);
+    }
+
     public void registerTool(Object tool) {
-        for (java.lang.reflect.Method method : tool.getClass().getMethods()) {
+        for (Method method : tool.getClass().getMethods()) {
             Tool annotation = method.getAnnotation(Tool.class);
             if (annotation != null) {
                 registeredTools.put(annotation.name(), tool);

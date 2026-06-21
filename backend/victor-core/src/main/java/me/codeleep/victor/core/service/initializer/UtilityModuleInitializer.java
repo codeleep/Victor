@@ -27,6 +27,9 @@ public class UtilityModuleInitializer extends BaseInitializer implements ModuleI
     public static final String KEY_RESUME_PARSER = "resume-parser";
     public static final String KEY_RESOURCE_RECALL = "resource-recall";
 
+    /** 资料查询工具名(对应 ResourceQueryTool 的 @Tool name) */
+    public static final String TOOL_RESOURCE_QUERY = "resource_query";
+
     private final AgentLlmConfigMapper agentLlmConfigMapper;
 
     public UtilityModuleInitializer(AgentMapper agentMapper, AgentTeamMapper agentTeamMapper,
@@ -49,7 +52,7 @@ public class UtilityModuleInitializer extends BaseInitializer implements ModuleI
         // 资料召回 Agent
         Object[] r2 = ensureAgent(userId, KEY_RESOURCE_RECALL, "资料召回Agent",
                 "负责根据面试题目和岗位要求召回相关的参考资料",
-                loadPrompt(KEY_RESOURCE_RECALL), llmConfigId, AgentType.INTERVIEW, List.of());
+                loadPrompt(KEY_RESOURCE_RECALL), llmConfigId, AgentType.INTERVIEW, List.of(TOOL_RESOURCE_QUERY));
         if ((boolean) r2[1]) agentCreated++;
 
         Map<String, Object> result = new LinkedHashMap<>();

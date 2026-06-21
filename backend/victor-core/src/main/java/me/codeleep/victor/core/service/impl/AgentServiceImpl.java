@@ -10,16 +10,20 @@ import me.codeleep.victor.common.result.ResultCode;
 
 import me.codeleep.victor.core.dto.AgentRequest;
 import me.codeleep.victor.core.dto.AgentVO;
+import me.codeleep.victor.core.dto.ToolVO;
 import me.codeleep.victor.core.entity.Agent;
 import me.codeleep.victor.core.entity.AgentLlmConfig;
 import me.codeleep.victor.core.mapper.AgentLlmConfigMapper;
 import me.codeleep.victor.core.mapper.AgentMapper;
 import me.codeleep.victor.core.service.AgentService;
 import me.codeleep.victor.core.service.converter.AgentConverter;
+import me.codeleep.victor.core.engine.AgentDefinitionFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Comparator;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -33,6 +37,7 @@ public class AgentServiceImpl implements AgentService {
     private final AgentMapper agentMapper;
     private final AgentLlmConfigMapper agentLlmConfigMapper;
     private final AgentConverter agentConverter;
+    private final AgentDefinitionFactory agentDefinitionFactory;
 
     @Override
     @Transactional
@@ -81,6 +86,9 @@ public class AgentServiceImpl implements AgentService {
             }
             if (request.getLlmConfigId() != null) {
                 agent.setLlmConfigId(request.getLlmConfigId());
+            }
+            if (request.getAvailableTools() != null) {
+                agent.setAvailableTools(request.getAvailableTools());
             }
         } else {
             agentConverter.updateEntity(request, agent);
@@ -192,4 +200,22 @@ public class AgentServiceImpl implements AgentService {
         }
         return vo;
     }
+
+    @Override
+    public List<ToolVO> listAvailableTools() {
+        return agentDefinitionFactory.getRegisteredTools().values().stream()
+                .map(tool -> {
+                    for (java.lang.reflect.Method method : tool.getClass().getMethods()) {
+                        io.agentscope.core.tool.Tool annotation = method.getAnnotation(io.agentscope.core.tool.Tool.class);
+                        if (annotation != null) {
+                            return new ToolVO(annotation.name(), annotation.description());
+                        }
+                    }
+                    return null;
+                })
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(ToolVO::getName, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+    }
+
 }

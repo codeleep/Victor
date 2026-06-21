@@ -194,6 +194,14 @@ export interface ExperienceRequest {
   attachments?: string[]
 }
 
+// ==================== Agent 可用工具 ====================
+
+export interface ToolVO {
+  name: string
+  description: string
+}
+
+
 // ==================== Agent 相关 ====================
 
 export interface AgentVO {

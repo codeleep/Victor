@@ -1,6 +1,7 @@
 package me.codeleep.victor.core.service;
 
 import me.codeleep.victor.core.dto.AgentRequest;
+import me.codeleep.victor.core.dto.ToolVO;
 import me.codeleep.victor.core.dto.AgentVO;
 import me.codeleep.victor.core.entity.Agent;
 
@@ -73,4 +74,11 @@ public interface AgentService {
      * @return Agent列表
      */
     List<AgentVO> listByType(String type);
+
+    /**
+     * 列出所有已注册的可用工具（供 Agent 配置界面选择）
+     *
+     * @return 工具列表
+     */
+    List<ToolVO> listAvailableTools();
 }

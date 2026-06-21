@@ -32,6 +32,8 @@ public class InterviewModuleInitializer extends BaseInitializer implements Modul
 
     /** 面试官推进下一题工具名(对应 AdvanceQuestionTool 的 @Tool name) */
     public static final String TOOL_ADVANCE_QUESTION = "advance_to_next_question";
+    /** 资料查询工具名(对应 ResourceQueryTool 的 @Tool name)，供面试官查询候选人岗位/简历/经历 */
+    public static final String TOOL_RESOURCE_QUERY = "resource_query";
 
     private final AgentLlmConfigMapper agentLlmConfigMapper;
 
@@ -50,7 +52,7 @@ public class InterviewModuleInitializer extends BaseInitializer implements Modul
         // 1. 创建面试相关 Agents
         Object[] r1 = ensureAgent(userId, KEY_INTERVIEWER_MAIN, "主面试官Agent",
                 "负责主导面试流程，与候选人进行对话交互",
-                loadPrompt(KEY_INTERVIEWER_MAIN), llmConfigId, AgentType.INTERVIEW, List.of());
+                loadPrompt(KEY_INTERVIEWER_MAIN), llmConfigId, AgentType.INTERVIEW, List.of(TOOL_ADVANCE_QUESTION, TOOL_RESOURCE_QUERY));
         Agent mainAgent = (Agent) r1[0];
         if ((boolean) r1[1]) agentCreated++;
 

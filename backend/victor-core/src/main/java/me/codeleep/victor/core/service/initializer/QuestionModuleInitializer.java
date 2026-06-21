@@ -33,6 +33,9 @@ public class QuestionModuleInitializer extends BaseInitializer implements Module
     public static final String KEY_QUESTION_SCORER_B = "question-scorer-b";
     public static final String KEY_TEAM_QUESTION = "system-team-question";
 
+    /** 资料查询工具名(对应 ResourceQueryTool 的 @Tool name)，供主Agent查询候选人岗位/简历/经历辅助出题 */
+    public static final String TOOL_RESOURCE_QUERY = "resource_query";
+
     private final AgentLlmConfigMapper agentLlmConfigMapper;
 
     public QuestionModuleInitializer(AgentMapper agentMapper, AgentTeamMapper agentTeamMapper,
@@ -50,13 +53,13 @@ public class QuestionModuleInitializer extends BaseInitializer implements Module
         // 1. 创建出题相关 Agents
         Object[] r1 = ensureAgent(userId, KEY_QUESTION_MAIN, "出题主Agent",
                 "负责编排和协调整个出题流程",
-                loadPrompt(KEY_QUESTION_MAIN), llmConfigId, AgentType.INTERVIEW, List.of());
+                loadPrompt(KEY_QUESTION_MAIN), llmConfigId, AgentType.INTERVIEW, List.of(TOOL_RESOURCE_QUERY));
         Agent mainAgent = (Agent) r1[0];
         if ((boolean) r1[1]) agentCreated++;
 
         Object[] r2 = ensureAgent(userId, KEY_QUESTION_GENERATOR, "出题Agent",
                 "负责根据岗位要求和候选人简历生成面试题目",
-                loadPrompt(KEY_QUESTION_GENERATOR), llmConfigId, AgentType.INTERVIEW, List.of());
+                loadPrompt(KEY_QUESTION_GENERATOR), llmConfigId, AgentType.INTERVIEW, List.of(TOOL_RESOURCE_QUERY));
         Agent generator = (Agent) r2[0];
         if ((boolean) r2[1]) agentCreated++;
 
