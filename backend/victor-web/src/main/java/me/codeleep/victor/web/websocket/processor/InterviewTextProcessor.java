@@ -12,7 +12,7 @@ import me.codeleep.victor.core.interviewer.Interviewer;
 import me.codeleep.victor.core.mapper.InterviewConfigMapper;
 import me.codeleep.victor.core.mapper.InterviewQuestionMapper;
 import me.codeleep.victor.core.mapper.InterviewTurnMapper;
-import me.codeleep.victor.core.service.interview.InterviewService;
+import me.codeleep.victor.core.service.interview.InterviewSessionService;
 import me.codeleep.victor.infra.agent.core.AgentResult;
 import me.codeleep.victor.web.websocket.protocol.server.interview.InterviewServerStreamChunkMessage;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,18 +54,18 @@ public class InterviewTextProcessor implements TextProcessor {
     private int maxFollowUps;
 
     private final InterviewTurnMapper turnMapper;
-    private final InterviewService interviewService;
+    private final InterviewSessionService interviewSessionService;
     private final InterviewConfigMapper interviewConfigMapper;
     private final InterviewQuestionMapper interviewQuestionMapper;
     private final InterviewContextBuilder interviewContextBuilder;
 
     public InterviewTextProcessor(InterviewTurnMapper turnMapper,
-                                   InterviewService interviewService,
+                                   InterviewSessionService interviewSessionService,
                                    InterviewConfigMapper interviewConfigMapper,
                                    InterviewQuestionMapper interviewQuestionMapper,
                                    InterviewContextBuilder interviewContextBuilder) {
         this.turnMapper = turnMapper;
-        this.interviewService = interviewService;
+        this.interviewSessionService = interviewSessionService;
         this.interviewConfigMapper = interviewConfigMapper;
         this.interviewQuestionMapper = interviewQuestionMapper;
         this.interviewContextBuilder = interviewContextBuilder;
@@ -262,8 +262,8 @@ public class InterviewTextProcessor implements TextProcessor {
      */
     private void applyFollowUpLimit(ProcessingContext context, Long interviewSessionId, Interviewer interviewer) {
         try {
-            InterviewService.ForceAdvanceResult result =
-                    interviewService.forceAdvanceIfLimitReached(interviewSessionId, maxFollowUps);
+            InterviewSessionService.ForceAdvanceResult result =
+                    interviewSessionService.forceAdvanceIfLimitReached(interviewSessionId, maxFollowUps);
             if (!result.advanced()) {
                 return;
             }

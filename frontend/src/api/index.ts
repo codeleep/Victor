@@ -315,9 +315,6 @@ export const interviewSessionApi = {
   getHistory(id: number): Promise<InterviewTurnVO[]> {
     return request.get<InterviewTurnVO[]>(`/interview-sessions/${id}/history`)
   },
-  getReport(id: number): Promise<InterviewReportVO> {
-    return request.get<InterviewReportVO>(`/interview-sessions/${id}/report`)
-  },
   async streamNextQuestion(id: number, onMessage: (chunk: string) => void): Promise<void> {
     const token = localStorage.getItem('token')
     const response = await fetch(`/api/v1/interview-sessions/${id}/next-question/stream`, {
@@ -395,6 +392,9 @@ export const interviewSessionApi = {
 export const reportApi = {
   generate(sessionId: number): Promise<number> {
     return request.post<number>(`/reports/generate/${sessionId}`)
+  },
+  regenerateBySessionId(sessionId: number): Promise<number> {
+    return request.post<number>(`/reports/session/${sessionId}/regenerate`)
   },
   getBySessionId(sessionId: number): Promise<InterviewReportVO> {
     return request.get<InterviewReportVO>(`/reports/session/${sessionId}`)

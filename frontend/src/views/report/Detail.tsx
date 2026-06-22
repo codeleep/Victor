@@ -1,33 +1,83 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Card, Button, Space, Spin, message } from 'antd'
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons'
+import { Card, Button, Space, Spin, message, Result } from 'antd'
+import { ArrowLeftOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons'
 import MDEditor from '@uiw/react-md-editor'
-import { interviewSessionApi, reportApi } from '@/api'
+import { reportApi } from '@/api'
 import type { InterviewReportVO } from '@/types'
 import './Report.scss'
+
+const isReportGenerating = (s?: string) => s === 'PENDING' || s === 'EVALUATING'
 
 export default function ReportDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [report, setReport] = useState<InterviewReportVO | null>(null)
   const [loading, setLoading] = useState(true)
+  const [regenerating, setRegenerating] = useState(false)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     loadReport()
+    return () => stopPolling()
   }, [id])
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  const startPolling = () => {
+    stopPolling()
+    pollRef.current = setInterval(async () => {
+      if (!id) return
+      try {
+        const data = await reportApi.getBySessionId(Number(id))
+        setReport(data)
+        if (data && !isReportGenerating(data.status)) {
+          stopPolling()
+        }
+      } catch (error) {
+        console.error('Failed to poll report:', error)
+      }
+    }, 4000)
+  }
 
   const loadReport = async () => {
     if (!id) return
     setLoading(true)
+    stopPolling()
     try {
-      const data = await interviewSessionApi.getReport(Number(id))
+      const data = await reportApi.getBySessionId(Number(id))
       setReport(data)
+      if (data && isReportGenerating(data.status)) {
+        startPolling()
+      }
     } catch (error) {
       console.error('Failed to load report:', error)
       message.error('获取报告失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleRegenerate = async () => {
+    if (!id) return
+    try {
+      setRegenerating(true)
+      await reportApi.regenerateBySessionId(Number(id))
+      message.success('已重新提交评估')
+      const data = await reportApi.getBySessionId(Number(id))
+      setReport(data)
+      if (data && isReportGenerating(data.status)) {
+        startPolling()
+      }
+    } catch (error) {
+      console.error('Failed to regenerate report:', error)
+    } finally {
+      setRegenerating(false)
     }
   }
 
@@ -78,11 +128,64 @@ export default function ReportDetail() {
     )
   }
 
+  // 报告仍在生成中:禁止查看,展示生成中状态
+  if (report && isReportGenerating(report.status)) {
+    return (
+      <div className="report-detail">
+        <div className="page-header">
+          <div className="header-left">
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/interview')} style={{ marginBottom: 8 }}>返回</Button>
+            <h1>面试报告</h1>
+            <p>面试评估详情</p>
+          </div>
+        </div>
+        <Result
+          icon={<Spin size="large" />}
+          status="info"
+          title="报告生成中"
+          subTitle="评估团队正在分析面试记录，请稍候片刻。完成后将自动展示报告。"
+        />
+      </div>
+    )
+  }
+
+  // 报告生成失败:展示失败原因并提供重新生成入口
+  if (report && report.status === 'FAILED') {
+    return (
+      <div className="report-detail">
+        <div className="page-header">
+          <div className="header-left">
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/interview')} style={{ marginBottom: 8 }}>返回</Button>
+            <h1>面试报告</h1>
+            <p>面试评估详情</p>
+          </div>
+        </div>
+        <Result
+          status="error"
+          title="报告生成失败"
+          subTitle={report.evaluationError || '评估过程中出现异常，请重试。'}
+          extra={[
+            <Button
+              key="retry"
+              type="primary"
+              icon={<ReloadOutlined />}
+              loading={regenerating}
+              onClick={handleRegenerate}
+            >
+              重新生成报告
+            </Button>,
+            <Button key="back" onClick={() => navigate('/interview')}>返回面试记录</Button>,
+          ]}
+        />
+      </div>
+    )
+  }
+
   if (!report) {
     return (
       <div style={{ textAlign: 'center', padding: '48px 0' }}>
         <p>报告不存在或尚未生成</p>
-        <Button onClick={() => navigate('/report')}>返回报告列表</Button>
+        <Button onClick={() => navigate('/interview')}>返回面试记录</Button>
       </div>
     )
   }
@@ -91,7 +194,7 @@ export default function ReportDetail() {
     <div className="report-detail">
       <div className="page-header">
         <div className="header-left">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/report')} style={{ marginBottom: 8 }}>返回</Button>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/interview')} style={{ marginBottom: 8 }}>返回</Button>
           <h1>面试报告</h1>
           <p>面试评估详情</p>
         </div>

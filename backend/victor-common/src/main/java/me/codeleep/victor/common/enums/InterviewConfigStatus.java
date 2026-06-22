@@ -17,6 +17,9 @@ public enum InterviewConfigStatus {
     IN_PROGRESS("IN_PROGRESS", "Interview in progress"),
     PAUSED("PAUSED", "Interview paused"),
     COMPLETED("COMPLETED", "Interview completed"),
+    REPORT_GENERATING("REPORT_GENERATING", "Report generating"),
+    REPORT_COMPLETED("REPORT_COMPLETED", "Report completed"),
+    REPORT_FAILED("REPORT_FAILED", "Report generation failed"),
     ABANDONED("ABANDONED", "Interview abandoned"),
     ARCHIVED("ARCHIVED", "Archived");
 

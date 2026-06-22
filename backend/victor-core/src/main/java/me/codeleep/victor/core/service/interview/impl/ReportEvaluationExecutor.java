@@ -1,40 +1,41 @@
-package me.codeleep.victor.core.service.report.impl;
+package me.codeleep.victor.core.service.interview.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.codeleep.victor.common.enums.InterviewConfigStatus;
+import me.codeleep.victor.common.enums.InterviewReportStatus;
+import me.codeleep.victor.common.enums.Speaker;
+import me.codeleep.victor.common.exception.BusinessException;
+import me.codeleep.victor.common.result.ResultCode;
+import me.codeleep.victor.core.engine.AgentTeamDefinitionFactory;
+import me.codeleep.victor.core.entity.*;
+import me.codeleep.victor.core.mapper.*;
 import me.codeleep.victor.infra.agent.StructuredJsonParser;
 import me.codeleep.victor.infra.agent.core.AgentContext;
 import me.codeleep.victor.infra.agent.core.AgentResult;
 import me.codeleep.victor.infra.agent.core.AgentTeamDefinition;
 import me.codeleep.victor.infra.agent.runner.AgentFactory;
 import me.codeleep.victor.infra.agent.runner.AgentRunner;
-import me.codeleep.victor.common.enums.InterviewReportStatus;
-import me.codeleep.victor.common.enums.Speaker;
-import me.codeleep.victor.common.exception.BusinessException;
-import me.codeleep.victor.common.result.ResultCode;
-import me.codeleep.victor.core.entity.*;
-import me.codeleep.victor.core.engine.AgentTeamDefinitionFactory;
-import me.codeleep.victor.core.mapper.*;
-import me.codeleep.victor.core.service.converter.InterviewReportConverter;
-import me.codeleep.victor.core.service.dto.InterviewReportVO;
-import me.codeleep.victor.core.service.report.ReportService;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import me.codeleep.victor.core.service.support.AsyncTaskRegistry;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * 报告服务实现
- * 使用评估 Agent 团队生成面试报告，具体指令由团队 DB prompt 驱动。
+ * 面试评估异步执行器。
+ * 独立 bean 让 @Async 经由 Spring 代理生效，避免 ReportServiceImpl 自注入自身。
+ * 评估流程: PENDING -> EVALUATING -> COMPLETED/FAILED，并同步面试会话状态。
  */
 @Slf4j
-@Service
+@Component
 @RequiredArgsConstructor
-public class ReportServiceImpl implements ReportService {
+public class ReportEvaluationExecutor {
 
     private final InterviewReportMapper interviewReportMapper;
     private final InterviewTurnMapper interviewTurnMapper;
@@ -44,25 +45,43 @@ public class ReportServiceImpl implements ReportService {
     private final AgentFactory agentFactory;
     private final AgentRunner agentRunner;
     private final AgentTeamDefinitionFactory teamDefinitionFactory;
-    private final InterviewReportConverter reportConverter;
+    private final AsyncTaskRegistry asyncTaskRegistry;
 
     private final StructuredJsonParser<Map<String, Object>> reportJsonParser =
             new StructuredJsonParser<>(new TypeReference<>() {});
 
-    @Override
-    @Transactional
-    public Long generateReport(Long sessionId) {
+    /**
+     * 异步执行评估:更新状态为 EVALUATING，调用评估团队，回填结果。
+     * 同一会话不会重复触发(在途登记去重)。
+     */
+    @Async
+    public void doEvaluateAsync(Long sessionId, Long reportId) {
+        if (!asyncTaskRegistry.start(sessionId)) {
+            log.info("Report evaluation already in flight, skip: sessionId={}", sessionId);
+            return;
+        }
+        try {
+            doEvaluate(sessionId, reportId);
+        } finally {
+            asyncTaskRegistry.finish(sessionId);
+        }
+    }
+
+    private void doEvaluate(Long sessionId, Long reportId) {
+        InterviewReport report = interviewReportMapper.selectById(reportId);
+        if (report == null) {
+            return;
+        }
+        report.setStatus(InterviewReportStatus.EVALUATING);
+        interviewReportMapper.updateById(report);
+
         InterviewConfig config = interviewConfigMapper.selectById(sessionId);
         if (config == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "面试会话不存在");
-        }
-
-        // 检查是否已有报告
-        InterviewReport existingReport = interviewReportMapper.selectOne(
-                new LambdaQueryWrapper<InterviewReport>().eq(InterviewReport::getSessionId, sessionId)
-        );
-        if (existingReport != null) {
-            return existingReport.getId();
+            report.setStatus(InterviewReportStatus.FAILED);
+            report.setEvaluationError("面试会话不存在");
+            interviewReportMapper.updateById(report);
+            syncSessionStatus(sessionId, report.getStatus());
+            return;
         }
 
         // 获取对话历史
@@ -108,11 +127,6 @@ public class ReportServiceImpl implements ReportService {
         // 获取评估团队
         AgentTeamDefinition team = getTeamOrThrow(config);
 
-        InterviewReport report = new InterviewReport();
-        report.setSessionId(sessionId);
-        report.setUserId(config.getUserId());
-        report.setEvaluationRetryCount(0);
-
         try {
             AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
 
@@ -139,10 +153,23 @@ public class ReportServiceImpl implements ReportService {
             setDefaultReportValues(report);
         }
 
-        interviewReportMapper.insert(report);
-        log.info("面试报告生成成功: sessionId={}, reportId={}", sessionId, report.getId());
+        interviewReportMapper.updateById(report);
+        syncSessionStatus(sessionId, report.getStatus());
+        log.info("面试报告生成完成: sessionId={}, reportId={}, reportStatus={}",
+                sessionId, report.getId(), report.getStatus());
+    }
 
-        return report.getId();
+    /**
+     * 评估结束后同步面试会话状态: COMPLETED -> REPORT_COMPLETED, FAILED -> REPORT_FAILED。
+     */
+    private void syncSessionStatus(Long sessionId, InterviewReportStatus reportStatus) {
+        InterviewConfigStatus configStatus = reportStatus == InterviewReportStatus.COMPLETED
+                ? InterviewConfigStatus.REPORT_COMPLETED : InterviewConfigStatus.REPORT_FAILED;
+        interviewConfigMapper.update(
+                null,
+                new LambdaUpdateWrapper<InterviewConfig>()
+                        .eq(InterviewConfig::getId, sessionId)
+                        .set(InterviewConfig::getStatus, configStatus));
     }
 
     /**
@@ -241,66 +268,4 @@ public class ReportServiceImpl implements ReportService {
         report.setSummary("评估过程出现异常，已生成默认报告");
         report.setGeneratedAt(LocalDateTime.now());
     }
-
-    @Override
-    public InterviewReportVO getReport(Long sessionId) {
-        InterviewReport report = interviewReportMapper.selectOne(
-                new LambdaQueryWrapper<InterviewReport>().eq(InterviewReport::getSessionId, sessionId)
-        );
-        return report != null ? reportConverter.toVO(report) : null;
-    }
-
-    @Override
-    public InterviewReportVO getReportBySessionId(Long sessionId) {
-        return getReport(sessionId);
-    }
-
-    @Override
-    public InterviewReportVO getReportById(Long id) {
-        InterviewReport report = interviewReportMapper.selectById(id);
-        return report != null ? reportConverter.toVO(report) : null;
-    }
-
-    @Override
-    public byte[] exportPdf(Long sessionId) {
-        InterviewReportVO report = getReport(sessionId);
-        if (report == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "报告不存在");
-        }
-        return new byte[0];
-    }
-
-    @Override
-    public String exportMarkdown(Long sessionId) {
-        InterviewReportVO report = getReport(sessionId);
-        if (report == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "报告不存在");
-        }
-
-        StringBuilder md = new StringBuilder();
-        md.append("# 面试评估报告\n\n");
-        md.append("**总分**: ").append(report.getOverallScore()).append("\n\n");
-
-        md.append("## 维度评分\n\n");
-        if (report.getDimensionScores() != null) {
-            report.getDimensionScores().forEach((dim, score) -> {
-                md.append("- **").append(dim).append("**: ").append(score).append("\n");
-            });
-        }
-
-        md.append("\n## 优势\n\n");
-        md.append(report.getStrengths()).append("\n");
-
-        md.append("\n## 不足\n\n");
-        md.append(report.getWeaknesses()).append("\n");
-
-        md.append("\n## 建议\n\n");
-        md.append(report.getSuggestions()).append("\n");
-
-        md.append("\n## 总结\n\n");
-        md.append(report.getSummary()).append("\n");
-
-        return md.toString();
-    }
-
 }

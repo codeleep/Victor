@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Button, Input, Select, App, Drawer, Tabs } from 'antd'
+import { Button, Input, Select, App, Drawer, Tabs, Tooltip } from 'antd'
 import {
   ArrowLeftOutlined, SendOutlined, BulbOutlined, AudioOutlined, StopOutlined,
-  EditOutlined, CodeOutlined
+  EditOutlined, CodeOutlined, FileTextOutlined, LoadingOutlined, ReloadOutlined
 } from '@ant-design/icons'
 import MDEditor from '@uiw/react-md-editor'
 import { Excalidraw } from '@excalidraw/excalidraw'
 import Editor from '@monaco-editor/react'
-import { interviewSessionApi } from '@/api'
+import { interviewSessionApi, reportApi } from '@/api'
 import { createInterviewWs, createAsrWs, createTtsWs, WsConnection } from '@/utils/websocket'
 import { AudioRecorder, AudioPlayer } from '@/utils/audio'
 import type {
@@ -312,6 +312,7 @@ export default function InterviewRoom() {
   const isLoadingRef = useRef(false)
   const isVoiceModeRef = useRef(false)
   const sessionStatusRef = useRef<SessionStatus>('IN_PROGRESS')
+  const reportPollRef = useRef<number | null>(null)
 
   const [isVoiceMode, setIsVoiceMode] = useState(false)
   const canInput = sessionStatus === 'IN_PROGRESS' && wsConnected
@@ -403,6 +404,11 @@ export default function InterviewRoom() {
       setSession(data)
       setSessionStatus(data.status)
 
+      // 进入时若报告仍在生成中,启动轮询直至就绪/失败
+      if (data.status === 'COMPLETED' || data.status === 'REPORT_GENERATING') {
+        startReportPolling()
+      }
+
       // Detect voice mode from config
       let voiceMode = false
       if (data.configId) {
@@ -462,6 +468,7 @@ export default function InterviewRoom() {
 
   const cleanup = () => {
     if (timerRef.current) clearInterval(timerRef.current)
+    stopReportPolling()
     interviewWsRef.current?.close()
     asrWsRef.current?.close()
     ttsWsRef.current?.close()
@@ -824,6 +831,8 @@ export default function InterviewRoom() {
       sessionStatusRef.current = 'COMPLETED'
       setSessionStatus('COMPLETED')
       cleanup()
+      // 面试结束后异步生成报告,轮询状态直到报告就绪/失败
+      startReportPolling()
     } catch (error) {
       console.error('Failed to complete:', error)
     }
@@ -831,6 +840,39 @@ export default function InterviewRoom() {
 
   const goToReport = () => {
     navigate(`/report/${sessionId}`)
+  }
+
+  const stopReportPolling = () => {
+    if (reportPollRef.current) {
+      clearInterval(reportPollRef.current)
+      reportPollRef.current = null
+    }
+  }
+
+  // 轮询会话状态,报告生成中 -> 就绪/失败时停止
+  const startReportPolling = () => {
+    stopReportPolling()
+    reportPollRef.current = window.setInterval(async () => {
+      try {
+        const data = await interviewSessionApi.getById(sessionId)
+        setSessionStatus(data.status)
+        if (data.status !== 'COMPLETED' && data.status !== 'REPORT_GENERATING') {
+          stopReportPolling()
+        }
+      } catch (error) {
+        console.error('Failed to poll report status:', error)
+      }
+    }, 4000)
+  }
+
+  const handleRegenerateReport = async () => {
+    try {
+      await reportApi.regenerateBySessionId(sessionId)
+      setSessionStatus('REPORT_GENERATING')
+      startReportPolling()
+    } catch (error) {
+      console.error('Failed to regenerate report:', error)
+    }
   }
 
   const requestHint = async () => {
@@ -924,7 +966,9 @@ export default function InterviewRoom() {
   const getStatusLabel = () => {
     return sessionStatus === 'IN_PROGRESS' ? '进行中' :
       sessionStatus === 'PAUSED' ? '已暂停' :
-      sessionStatus === 'COMPLETED' ? '已完成' : '已放弃'
+      sessionStatus === 'COMPLETED' || sessionStatus === 'REPORT_GENERATING' ? '评估中' :
+      sessionStatus === 'REPORT_COMPLETED' ? '已完成' :
+      sessionStatus === 'REPORT_FAILED' ? '评估失败' : '已放弃'
   }
 
   const openAttachmentDrawer = (attachments: InterviewAttachment[], index: number) => {
@@ -1184,8 +1228,21 @@ export default function InterviewRoom() {
               {sessionStatus === 'PAUSED' && (
                 <Button type="primary" onClick={handleResume}>继续面试</Button>
               )}
-              {sessionStatus === 'COMPLETED' && (
-                <Button type="primary" onClick={goToReport}>查看报告</Button>
+              {(sessionStatus === 'COMPLETED' || sessionStatus === 'REPORT_GENERATING') && (
+                <Tooltip title="报告生成中，请稍候">
+                  <Button type="primary" icon={<LoadingOutlined />} disabled>查看报告</Button>
+                </Tooltip>
+              )}
+              {sessionStatus === 'REPORT_COMPLETED' && (
+                <Button type="primary" icon={<FileTextOutlined />} onClick={goToReport}>查看报告</Button>
+              )}
+              {sessionStatus === 'REPORT_FAILED' && (
+                <>
+                  <Tooltip title="报告生成失败">
+                    <Button type="primary" icon={<FileTextOutlined />} disabled>查看报告</Button>
+                  </Tooltip>
+                  <Button icon={<ReloadOutlined />} onClick={handleRegenerateReport}>重新生成报告</Button>
+                </>
               )}
             </div>
           </div>

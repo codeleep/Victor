@@ -32,9 +32,9 @@ export type TeamExecutionMode = 'PARALLEL' | 'SEQUENTIAL'
 
 export type InterviewMode = 'VOICE' | 'TEXT'
 
-export type InterviewConfigStatus = 'DRAFT' | 'GENERATING' | 'GENERATE_FAILED' | 'READY' | 'ARCHIVED'
+export type InterviewConfigStatus = 'DRAFT' | 'GENERATING' | 'GENERATE_FAILED' | 'READY' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'REPORT_GENERATING' | 'REPORT_COMPLETED' | 'REPORT_FAILED' | 'ABANDONED' | 'ARCHIVED'
 
-export type SessionStatus = 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'ABANDONED'
+export type SessionStatus = 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'REPORT_GENERATING' | 'REPORT_COMPLETED' | 'REPORT_FAILED' | 'ABANDONED'
 
 export type InterviewReportStatus = 'PENDING' | 'EVALUATING' | 'COMPLETED' | 'FAILED'
 

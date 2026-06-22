@@ -5,27 +5,16 @@ import me.codeleep.victor.common.enums.InterviewConfigStatus;
 import me.codeleep.victor.common.enums.Speaker;
 import me.codeleep.victor.core.BaseServiceTest;
 import me.codeleep.victor.core.engine.InterviewEngine;
-import me.codeleep.victor.core.entity.AgentTeam;
-import me.codeleep.victor.core.entity.Experience;
 import me.codeleep.victor.core.entity.InterviewConfig;
 import me.codeleep.victor.core.entity.InterviewQuestion;
 import me.codeleep.victor.core.entity.InterviewTurn;
-import me.codeleep.victor.core.entity.Job;
-import me.codeleep.victor.core.entity.Question;
-import me.codeleep.victor.core.entity.Resume;
-import me.codeleep.victor.core.mapper.AgentTeamMapper;
-import me.codeleep.victor.core.mapper.ExperienceMapper;
 import me.codeleep.victor.core.mapper.InterviewConfigMapper;
 import me.codeleep.victor.core.mapper.InterviewQuestionMapper;
 import me.codeleep.victor.core.mapper.InterviewTurnMapper;
-import me.codeleep.victor.core.mapper.JobMapper;
-import me.codeleep.victor.core.mapper.QuestionMapper;
-import me.codeleep.victor.core.mapper.ResumeMapper;
-import me.codeleep.victor.core.service.converter.InterviewConfigConverter;
 import me.codeleep.victor.core.service.converter.InterviewTurnConverter;
-import me.codeleep.victor.core.service.interview.InterviewService;
-import me.codeleep.victor.core.service.interview.impl.InterviewServiceImpl;
-import me.codeleep.victor.core.service.interview.impl.InterviewQuestionGenerationService;
+import me.codeleep.victor.core.service.interview.InterviewSessionService;
+import me.codeleep.victor.core.service.interview.InterviewReportService;
+import me.codeleep.victor.core.service.interview.impl.InterviewSessionServiceImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -35,16 +24,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 面试服务单元测试 - 验证单题追问次数兜底推进
- * {@link InterviewServiceImpl#forceAdvanceIfLimitReached}
+ * 面试会话服务单元测试 - 验证单题追问次数兜底推进
+ * {@link InterviewSessionServiceImpl#forceAdvanceIfLimitReached}
  */
-class InterviewServiceImplTest extends BaseServiceTest {
+class InterviewSessionServiceImplTest extends BaseServiceTest {
 
     private static final Long SESSION_ID = 100L;
     private static final Long CURRENT_QUESTION_ID = 10L;
@@ -56,26 +44,14 @@ class InterviewServiceImplTest extends BaseServiceTest {
     @Mock
     private InterviewQuestionMapper interviewQuestionMapper;
     @Mock
-    private QuestionMapper questionMapper;
-    @Mock
-    private ExperienceMapper experienceMapper;
-    @Mock
-    private JobMapper jobMapper;
-    @Mock
-    private ResumeMapper resumeMapper;
-    @Mock
-    private AgentTeamMapper agentTeamMapper;
-    @Mock
     private InterviewEngine interviewEngine;
     @Mock
-    private InterviewQuestionGenerationService questionGenerationService;
-    @Mock
-    private InterviewConfigConverter configConverter;
-    @Mock
     private InterviewTurnConverter turnConverter;
+    @Mock
+    private InterviewReportService reportService;
 
     @InjectMocks
-    private InterviewServiceImpl interviewService;
+    private InterviewSessionServiceImpl interviewService;
 
     private InterviewConfig inProgressConfig() {
         InterviewConfig config = new InterviewConfig();
@@ -104,7 +80,7 @@ class InterviewServiceImplTest extends BaseServiceTest {
         when(interviewQuestionMapper.selectById(CURRENT_QUESTION_ID)).thenReturn(question(10L, 1));
         when(interviewTurnMapper.selectCount(any())).thenReturn(3L);
 
-        InterviewService.ForceAdvanceResult result =
+        InterviewSessionService.ForceAdvanceResult result =
                 interviewService.forceAdvanceIfLimitReached(SESSION_ID, 5);
 
         assertFalse(result.advanced());
@@ -121,7 +97,7 @@ class InterviewServiceImplTest extends BaseServiceTest {
         when(interviewTurnMapper.selectCount(any())).thenReturn(5L);
         when(interviewQuestionMapper.selectOne(any())).thenReturn(question(20L, 2));
 
-        InterviewService.ForceAdvanceResult result =
+        InterviewSessionService.ForceAdvanceResult result =
                 interviewService.forceAdvanceIfLimitReached(SESSION_ID, 5);
 
         assertTrue(result.advanced());
@@ -137,7 +113,7 @@ class InterviewServiceImplTest extends BaseServiceTest {
         when(interviewTurnMapper.selectCount(any())).thenReturn(5L);
         when(interviewQuestionMapper.selectOne(any())).thenReturn(null);
 
-        InterviewService.ForceAdvanceResult result =
+        InterviewSessionService.ForceAdvanceResult result =
                 interviewService.forceAdvanceIfLimitReached(SESSION_ID, 5);
 
         assertTrue(result.advanced());
