@@ -144,6 +144,11 @@
     border-color: rgba(196, 90, 74, 0.22);
     color: var(--ir-error);
   }
+  &.review-mode {
+    background: var(--ir-accent-dim);
+    border-color: rgba(217, 119, 87, 0.3);
+    color: var(--ir-accent-strong);
+  }
 }
 
 .interview-timer {

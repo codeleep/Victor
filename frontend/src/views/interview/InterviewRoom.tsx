@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Button, Input, Select, App, Drawer, Tabs, Tooltip } from 'antd'
+import { Button, Input, Select, App, Drawer, Tabs, Modal, Spin, Result, Card } from 'antd'
 import {
   ArrowLeftOutlined, SendOutlined, BulbOutlined, AudioOutlined, StopOutlined,
-  EditOutlined, CodeOutlined, FileTextOutlined, LoadingOutlined, ReloadOutlined
+  EditOutlined, CodeOutlined, FileTextOutlined, ReloadOutlined
 } from '@ant-design/icons'
 import MDEditor from '@uiw/react-md-editor'
 import { Excalidraw } from '@excalidraw/excalidraw'
@@ -16,7 +16,7 @@ import type {
   InterviewErrorMessage, InterviewStatusMessage, InterviewSessionVO,
   InterviewTurnVO, SessionStatus,
   AsrServerMessage, AsrStreamChunkMessage, AsrStreamEndMessage, TtsServerMessage,
-  InterviewAttachment
+  InterviewAttachment, InterviewReportVO
 } from '@/types'
 import './InterviewRoom.scss'
 import { TaskBlock, type ToolEventItem } from './components/TaskBlock'
@@ -295,6 +295,9 @@ export default function InterviewRoom() {
   const [previewAttachments, setPreviewAttachments] = useState<InterviewAttachment[]>([])
   const [previewAttachmentKey, setPreviewAttachmentKey] = useState('0')
   const [previewFitKey, setPreviewFitKey] = useState(0)
+  const [reportModalOpen, setReportModalOpen] = useState(false)
+  const [reportData, setReportData] = useState<InterviewReportVO | null>(null)
+  const [reportLoading, setReportLoading] = useState(false)
 
   // Refs
   const conversationRef = useRef<HTMLDivElement>(null)
@@ -838,9 +841,44 @@ export default function InterviewRoom() {
     }
   }
 
-  const goToReport = () => {
-    navigate(`/report/${sessionId}`)
+  // 复盘模式: 面试已结束(含评估中/失败/放弃),只读查看历史
+  const isReviewMode =
+    sessionStatus === 'COMPLETED' || sessionStatus === 'REPORT_GENERATING' ||
+    sessionStatus === 'REPORT_COMPLETED' || sessionStatus === 'REPORT_FAILED' ||
+    sessionStatus === 'ABANDONED'
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return '#4A9E6E'
+    if (score >= 60) return '#D4A843'
+    return '#C45A4A'
   }
+
+  const loadReport = async () => {
+    setReportLoading(true)
+    try {
+      const data = await reportApi.getBySessionId(sessionId)
+      setReportData(data)
+    } catch (error) {
+      console.error('Failed to load report:', error)
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  const openReportModal = () => {
+    setReportModalOpen(true)
+  }
+
+  const closeReportModal = () => {
+    setReportModalOpen(false)
+  }
+
+  // 报告弹窗打开期间,会话状态变化后刷新报告内容(生成中 -> 完成/失败)
+  useEffect(() => {
+    if (reportModalOpen) {
+      loadReport()
+    }
+  }, [reportModalOpen, sessionStatus])
 
   const stopReportPolling = () => {
     if (reportPollRef.current) {
@@ -996,9 +1034,13 @@ export default function InterviewRoom() {
               {getStatusLabel()}
             </div>
             <div className="ws-indicators">
-              <div className={`ws-indicator ${wsConnected ? 'connected' : 'disconnected'}`}>
-                {connectionLabel}
-              </div>
+              {isReviewMode ? (
+                <div className="ws-indicator review-mode">复盘模式 · 只读</div>
+              ) : (
+                <div className={`ws-indicator ${wsConnected ? 'connected' : 'disconnected'}`}>
+                  {connectionLabel}
+                </div>
+              )}
             </div>
           </div>
           <div className="interview-timer">{formatTime(elapsedSeconds)}</div>
@@ -1082,6 +1124,8 @@ export default function InterviewRoom() {
           )}
 
           <div className="input-area">
+            {!isReviewMode && (
+            <>
             {showAttachmentEditor && (
               <div className={`attachment-editor-panel ${(hasDrawing || codeText.trim()) ? 'has-attachment' : ''}`}>
                 <Tabs
@@ -1216,6 +1260,8 @@ export default function InterviewRoom() {
                 {isRecording ? '正在聆听，录音结束后会自动发送识别结果' : '录音识别完成后会自动发送，无需再点发送'}
               </div>
             )}
+            </>
+            )}
 
             <div className="action-buttons">
               {sessionStatus === 'IN_PROGRESS' && (
@@ -1228,21 +1274,9 @@ export default function InterviewRoom() {
               {sessionStatus === 'PAUSED' && (
                 <Button type="primary" onClick={handleResume}>继续面试</Button>
               )}
-              {(sessionStatus === 'COMPLETED' || sessionStatus === 'REPORT_GENERATING') && (
-                <Tooltip title="报告生成中，请稍候">
-                  <Button type="primary" icon={<LoadingOutlined />} disabled>查看报告</Button>
-                </Tooltip>
-              )}
-              {sessionStatus === 'REPORT_COMPLETED' && (
-                <Button type="primary" icon={<FileTextOutlined />} onClick={goToReport}>查看报告</Button>
-              )}
-              {sessionStatus === 'REPORT_FAILED' && (
-                <>
-                  <Tooltip title="报告生成失败">
-                    <Button type="primary" icon={<FileTextOutlined />} disabled>查看报告</Button>
-                  </Tooltip>
-                  <Button icon={<ReloadOutlined />} onClick={handleRegenerateReport}>重新生成报告</Button>
-                </>
+              {(sessionStatus === 'COMPLETED' || sessionStatus === 'REPORT_GENERATING' ||
+                sessionStatus === 'REPORT_COMPLETED' || sessionStatus === 'REPORT_FAILED') && (
+                <Button type="primary" icon={<FileTextOutlined />} onClick={openReportModal}>查看报告</Button>
               )}
             </div>
           </div>
@@ -1362,6 +1396,74 @@ export default function InterviewRoom() {
           </div>
         )}
       </Drawer>
+
+      <Modal
+        title="面试评估报告"
+        open={reportModalOpen}
+        onCancel={closeReportModal}
+        footer={null}
+        width="min(92vw, 1080px)"
+        destroyOnClose
+      >
+        {reportLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+            <Spin size="large" />
+          </div>
+        ) : reportData && (reportData.status === 'PENDING' || reportData.status === 'EVALUATING') ? (
+          <Result
+            icon={<Spin />}
+            status="info"
+            title="报告生成中"
+            subTitle="评估团队正在分析面试记录，完成后将自动展示。"
+          />
+        ) : reportData && reportData.status === 'FAILED' ? (
+          <Result
+            status="error"
+            title="报告生成失败"
+            subTitle={reportData.evaluationError || '评估过程中出现异常，请重试。'}
+            extra={
+              <Button icon={<ReloadOutlined />} onClick={handleRegenerateReport}>重新生成报告</Button>
+            }
+          />
+        ) : reportData ? (
+          <div className="report-modal-body">
+            <div className="report-overview">
+              <Card className="score-card">
+                <div className="score-ring" style={{ color: getScoreColor(reportData.overallScore || 0) }}>
+                  {reportData.overallScore || '-'}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>综合评分</div>
+              </Card>
+              <Card className="summary-card" title="总结">
+                <MDEditor.Markdown source={reportData.summary || '暂无总结'} />
+              </Card>
+            </div>
+            <Card className="section-card" title="优势" style={{ marginTop: 12 }}>
+              <MDEditor.Markdown source={reportData.strengths || '暂无数据'} />
+            </Card>
+            <Card className="section-card" title="不足" style={{ marginTop: 12 }}>
+              <MDEditor.Markdown source={reportData.weaknesses || '暂无数据'} />
+            </Card>
+            <Card className="section-card" title="改进建议" style={{ marginTop: 12 }}>
+              <MDEditor.Markdown source={reportData.suggestions || '暂无数据'} />
+            </Card>
+            {reportData.dimensionScores && (
+              <Card className="section-card" title="维度评分" style={{ marginTop: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
+                  {Object.entries(reportData.dimensionScores as Record<string, number>).map(([key, value]) => (
+                    <div key={key} style={{ padding: 12, background: '#F5F3EC', borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: '#5A5A58', marginBottom: 4 }}>{key}</div>
+                      <div style={{ fontSize: 20, fontWeight: 600, color: getScoreColor(value) }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
+        ) : (
+          <Result status="info" title="报告不存在或尚未生成" />
+        )}
+      </Modal>
     </div>
   )
 }

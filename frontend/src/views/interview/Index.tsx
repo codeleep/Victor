@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, Button, Table, Tag, Space, Tooltip, message, Popconfirm } from 'antd'
-import { PlusOutlined, PlayCircleOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
+import { PlusOutlined, PlayCircleOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, FileTextOutlined, LoadingOutlined, HistoryOutlined } from '@ant-design/icons'
 import { interviewConfigApi, interviewSessionApi, reportApi } from '@/api'
 import type { InterviewConfigVO, InterviewConfigStatus } from '@/types'
 import './Index.scss'
@@ -29,6 +29,10 @@ const isInterviewing = (s: InterviewConfigStatus) => s === 'IN_PROGRESS' || s ==
 const isInterviewStarted = (s: InterviewConfigStatus) =>
   s === 'IN_PROGRESS' || s === 'PAUSED' || s === 'COMPLETED' ||
   s === 'REPORT_GENERATING' || s === 'REPORT_COMPLETED' || s === 'REPORT_FAILED' || s === 'ABANDONED'
+// 面试已结束(含放弃)可进入只读复盘
+const isReviewable = (s: InterviewConfigStatus) =>
+  s === 'COMPLETED' || s === 'REPORT_GENERATING' || s === 'REPORT_COMPLETED' ||
+  s === 'REPORT_FAILED' || s === 'ABANDONED'
 
 export default function InterviewIndex() {
   const navigate = useNavigate()
@@ -213,6 +217,21 @@ export default function InterviewIndex() {
     return null
   }
 
+  const renderReviewButton = (record: InterviewConfigVO) => {
+    if (isReviewable(record.status)) {
+      return (
+        <Button
+          type="link"
+          icon={<HistoryOutlined />}
+          onClick={() => navigate(`/interview/room/${record.id}`)}
+        >
+          复盘
+        </Button>
+      )
+    }
+    return null
+  }
+
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
     { title: '配置名称', dataIndex: 'name', key: 'name' },
@@ -250,6 +269,7 @@ export default function InterviewIndex() {
         <Space>
           {renderStartButton(record)}
           {renderReportButton(record)}
+          {renderReviewButton(record)}
           {record.status === 'GENERATE_FAILED' && (
             <Button type="link" icon={<ReloadOutlined />} onClick={() => handleRegenerate(record.id)}>
               重新生成
