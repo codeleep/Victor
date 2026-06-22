@@ -227,8 +227,8 @@ public class InterviewTextProcessor implements TextProcessor {
                                     toolEventsForPersist.add(eventMap);
                                     appendToolSummary(toolBuffer, te);
                                 }
-                                if (toolTextFallback.length() > 0) {
-                                    if (toolBuffer.length() > 0) {
+                                if (!toolTextFallback.isEmpty()) {
+                                    if (!toolBuffer.isEmpty()) {
                                         toolBuffer.append('\n');
                                     }
                                     toolBuffer.append(toolTextFallback);
