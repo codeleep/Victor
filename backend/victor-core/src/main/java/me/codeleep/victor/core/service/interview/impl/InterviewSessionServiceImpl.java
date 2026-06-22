@@ -153,8 +153,8 @@ public class InterviewSessionServiceImpl implements InterviewSessionService {
     @Transactional
     public void completeInterview(Long sessionId) {
         InterviewConfig config = getSessionConfigOrThrow(sessionId);
-        if (config.getStatus() == InterviewConfigStatus.ABANDONED) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "Abandoned interview cannot be completed");
+        if (!config.getStatus().canTransitionTo(InterviewConfigStatus.COMPLETED)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前面试状态不允许结束: " + config.getStatus().getDescription());
         }
         config.setStatus(InterviewConfigStatus.COMPLETED);
         config.setCompletedAt(LocalDateTime.now());
@@ -219,8 +219,8 @@ public class InterviewSessionServiceImpl implements InterviewSessionService {
     @Transactional
     public void cancelInterview(Long sessionId) {
         InterviewConfig config = getSessionConfigOrThrow(sessionId);
-        if (config.getStatus() == InterviewConfigStatus.COMPLETED) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "Completed interview cannot be cancelled");
+        if (!config.getStatus().canTransitionTo(InterviewConfigStatus.ABANDONED)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前面试状态不允许放弃: " + config.getStatus().getDescription());
         }
         config.setStatus(InterviewConfigStatus.ABANDONED);
         config.setCompletedAt(LocalDateTime.now());

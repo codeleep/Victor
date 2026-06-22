@@ -81,10 +81,7 @@ public class InterviewQuestionServiceImpl implements InterviewQuestionService {
     public void updateConfig(Long id, InterviewConfigRequest request) {
         InterviewConfig config = getConfigEntityOrThrow(id);
         // 面试已开始(进入会话及之后)即不允许编辑配置
-        if (config.getStatus() != InterviewConfigStatus.DRAFT
-                && config.getStatus() != InterviewConfigStatus.GENERATING
-                && config.getStatus() != InterviewConfigStatus.GENERATE_FAILED
-                && config.getStatus() != InterviewConfigStatus.READY) {
+        if (!config.getStatus().isEditable()) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "面试已开始，不可编辑配置");
         }
         configConverter.updateEntity(request, config);
@@ -133,8 +130,8 @@ public class InterviewQuestionServiceImpl implements InterviewQuestionService {
     @Transactional
     public void publishConfig(Long id) {
         InterviewConfig config = getConfigEntityOrThrow(id);
-        if (config.getStatus() != InterviewConfigStatus.DRAFT && config.getStatus() != InterviewConfigStatus.GENERATE_FAILED) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "Current config status cannot be published");
+        if (!config.getStatus().canTransitionTo(InterviewConfigStatus.GENERATING)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前状态不允许发布出题");
         }
 
         config.setStatus(InterviewConfigStatus.GENERATING);
@@ -158,8 +155,8 @@ public class InterviewQuestionServiceImpl implements InterviewQuestionService {
     @Transactional
     public void archiveConfig(Long id) {
         InterviewConfig config = getConfigEntityOrThrow(id);
-        if (config.getStatus() != InterviewConfigStatus.READY) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "Only READY config can be archived");
+        if (!config.getStatus().canTransitionTo(InterviewConfigStatus.ARCHIVED)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅就绪(READY)状态可归档");
         }
         config.setStatus(InterviewConfigStatus.ARCHIVED);
         interviewConfigMapper.updateById(config);
