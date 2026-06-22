@@ -80,6 +80,13 @@ public class InterviewQuestionServiceImpl implements InterviewQuestionService {
     @Transactional
     public void updateConfig(Long id, InterviewConfigRequest request) {
         InterviewConfig config = getConfigEntityOrThrow(id);
+        // 面试已开始(进入会话及之后)即不允许编辑配置
+        if (config.getStatus() != InterviewConfigStatus.DRAFT
+                && config.getStatus() != InterviewConfigStatus.GENERATING
+                && config.getStatus() != InterviewConfigStatus.GENERATE_FAILED
+                && config.getStatus() != InterviewConfigStatus.READY) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "面试已开始，不可编辑配置");
+        }
         configConverter.updateEntity(request, config);
         interviewConfigMapper.updateById(config);
         log.info("Interview config updated: id={}", id);

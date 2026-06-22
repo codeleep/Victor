@@ -25,6 +25,10 @@ const isReportGenerating = (s: InterviewConfigStatus) => s === 'COMPLETED' || s 
 const isReportReady = (s: InterviewConfigStatus) => s === 'REPORT_COMPLETED'
 const isReportFailed = (s: InterviewConfigStatus) => s === 'REPORT_FAILED'
 const isInterviewing = (s: InterviewConfigStatus) => s === 'IN_PROGRESS' || s === 'PAUSED'
+// 面试已开始(进入会话及之后)即不可编辑配置
+const isInterviewStarted = (s: InterviewConfigStatus) =>
+  s === 'IN_PROGRESS' || s === 'PAUSED' || s === 'COMPLETED' ||
+  s === 'REPORT_GENERATING' || s === 'REPORT_COMPLETED' || s === 'REPORT_FAILED' || s === 'ABANDONED'
 
 export default function InterviewIndex() {
   const navigate = useNavigate()
@@ -251,9 +255,15 @@ export default function InterviewIndex() {
               重新生成
             </Button>
           )}
-          <Button type="link" icon={<EditOutlined />} onClick={() => navigate('/interview/config')}>
-            编辑
-          </Button>
+          {isInterviewStarted(record.status) ? (
+            <Tooltip title="面试已开始，不可编辑">
+              <Button type="link" icon={<EditOutlined />} disabled>编辑</Button>
+            </Tooltip>
+          ) : (
+            <Button type="link" icon={<EditOutlined />} onClick={() => navigate('/interview/config')}>
+              编辑
+            </Button>
+          )}
           {record.status === 'READY' && (
             <Popconfirm title="确定归档？" onConfirm={() => handleArchive(record.id)}>
               <Button type="link">归档</Button>
@@ -272,11 +282,11 @@ export default function InterviewIndex() {
       <div className="page-header">
         <div className="header-left">
           <h1>面试记录</h1>
-          <p>管理面试配置和记录</p>
+          <p>管理面试记录，新建面试需先完成配置与出题</p>
         </div>
         <Space>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/interview/config')}>
-            新建配置
+            新建面试
           </Button>
         </Space>
       </div>
