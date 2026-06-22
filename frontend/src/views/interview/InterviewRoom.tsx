@@ -430,7 +430,19 @@ export default function InterviewRoom() {
       const history = await interviewSessionApi.getHistory(sessionId)
       const historyMessages: ChatMessage[] = history.map((h: InterviewTurnVO) => {
         const legacy = splitLegacyDrawingContent(h.content)
-        const rawTools = (h.toolEvents ?? []).map((t, i) => ({
+        // 历史工具事件去重: 旧数据可能因流式增量未去重而存储大量重复条目,
+        // 按 name+args 合并(后者补充 result), 与实时渲染的按 ID 去重效果一致
+        const dedupedTools = (h.toolEvents ?? []).reduce((acc, t) => {
+          const key = `${t.name}::${JSON.stringify(t.args ?? null)}`
+          const exist = acc.find(x => `${x.name}::${JSON.stringify(x.args ?? null)}` === key)
+          if (exist) {
+            if (t.result != null) exist.result = t.result
+          } else {
+            acc.push({ ...t })
+          }
+          return acc
+        }, [] as NonNullable<typeof h.toolEvents>)
+        const rawTools = dedupedTools.map((t, i) => ({
           id: i + 1,
           name: t.name,
           args: t.args,

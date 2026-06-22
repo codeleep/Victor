@@ -23,8 +23,10 @@ import reactor.core.publisher.FluxSink;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 面试Agent文本处理器。
@@ -102,8 +104,11 @@ public class InterviewTextProcessor implements TextProcessor {
                 StringBuilder sentenceBuffer = new StringBuilder();
                 StringBuilder fullResponse = new StringBuilder();
                 StringBuilder thinkingBuffer = new StringBuilder();
-                StringBuilder toolBuffer = new StringBuilder();
-                List<Map<String, Object>> toolEventsForPersist = new ArrayList<>();
+                // 按 toolCallId 去重合并的工具事件: 流式 THINKING 增量会重复携带同一 ToolUseBlock,
+                // 落库前合并为一个条目, 避免数据库存储上千条重复记录
+                LinkedHashMap<String, AgentResult.ToolEvent> toolEventMap = new LinkedHashMap<>();
+                AtomicInteger nullIdSeq = new AtomicInteger();
+                StringBuilder toolTextFallback = new StringBuilder();
 
                 interviewer.chat(text)
                         .doOnNext(result -> {
@@ -135,14 +140,8 @@ public class InterviewTextProcessor implements TextProcessor {
                                                         callId, te.getName(), te.getArgs(), te.getResult());
                                         emitter.next(new StreamChunk(null,
                                                 InterviewServerStreamChunkMessage.Kind.TOOL_CALL, td));
-                                        Map<String, Object> eventMap = new HashMap<>();
-                                        eventMap.put("name", te.getName());
-                                        if (te.getArgs() != null && !te.getArgs().isEmpty()) {
-                                            eventMap.put("args", te.getArgs());
-                                        }
-                                        eventMap.put("type", "call");
-                                        toolEventsForPersist.add(eventMap);
-                                        appendToolSummary(toolBuffer, te);
+                                        // 落库前按 toolCallId 去重合并(流式增量重复携带同一 ToolUseBlock)
+                                        mergeToolEvent(toolEventMap, nullIdSeq, te);
                                     }
                                 }
                                 return;
@@ -161,30 +160,15 @@ public class InterviewTextProcessor implements TextProcessor {
                                                 new InterviewServerStreamChunkMessage.ToolData(
                                                         te.getToolCallId(), te.getName(), te.getArgs(), te.getResult());
                                         emitter.next(new StreamChunk(null, tk, td));
-                                        // 累积结构化工具事件用于落库
-                                        Map<String, Object> eventMap = new HashMap<>();
-                                        eventMap.put("name", te.getName());
-                                        if (te.getArgs() != null && !te.getArgs().isEmpty()) {
-                                            eventMap.put("args", te.getArgs());
-                                        }
-                                        if (te.isResultEvent()) {
-                                            eventMap.put("type", "result");
-                                            if (te.getResult() != null) {
-                                                eventMap.put("result", te.getResult());
-                                            }
-                                        } else {
-                                            eventMap.put("type", "call");
-                                        }
-                                        toolEventsForPersist.add(eventMap);
-                                        // 累积工具摘要用于落库 reasoning
-                                        appendToolSummary(toolBuffer, te);
+                                        // 落库前按 toolCallId 去重合并
+                                        mergeToolEvent(toolEventMap, nullIdSeq, te);
                                     }
                                 } else if (content != null && !content.isEmpty()) {
                                     // 兜底:无结构化数据时退化为文本
-                                    if (toolBuffer.length() > 0) {
-                                        toolBuffer.append('\n');
+                                    if (toolTextFallback.length() > 0) {
+                                        toolTextFallback.append('\n');
                                     }
-                                    toolBuffer.append(content);
+                                    toolTextFallback.append(content);
                                     emitter.next(new StreamChunk(content,
                                             type == AgentResult.EventType.TOOL_RESULT
                                                     ? InterviewServerStreamChunkMessage.Kind.TOOL_RESULT
@@ -227,6 +211,28 @@ public class InterviewTextProcessor implements TextProcessor {
                             // 持久化面试官回复(题目可能已被 Agent 工具切换,按 DB 当前题 ID 落库)
                             Long spokenQuestionId = resolveCurrentQuestionId(interviewSessionId, currentQuestionId);
                             if (interviewSessionId != null && !fullResponse.isEmpty()) {
+                                // 落库前从去重后的工具事件构建结构化列表与 reasoning 摘要(每个工具仅一条)
+                                StringBuilder toolBuffer = new StringBuilder();
+                                List<Map<String, Object>> toolEventsForPersist = new ArrayList<>();
+                                for (AgentResult.ToolEvent te : toolEventMap.values()) {
+                                    Map<String, Object> eventMap = new HashMap<>();
+                                    eventMap.put("name", te.getName());
+                                    if (te.getArgs() != null && !te.getArgs().isEmpty()) {
+                                        eventMap.put("args", te.getArgs());
+                                    }
+                                    if (te.getResult() != null) {
+                                        eventMap.put("result", te.getResult());
+                                    }
+                                    eventMap.put("type", te.isResultEvent() ? "result" : "call");
+                                    toolEventsForPersist.add(eventMap);
+                                    appendToolSummary(toolBuffer, te);
+                                }
+                                if (toolTextFallback.length() > 0) {
+                                    if (toolBuffer.length() > 0) {
+                                        toolBuffer.append('\n');
+                                    }
+                                    toolBuffer.append(toolTextFallback);
+                                }
                                 String reasoning = buildReasoning(thinkingBuffer, toolBuffer);
                                 saveTurn(interviewSessionId, spokenQuestionId, Speaker.AI, fullResponse.toString(), null, reasoning, toolEventsForPersist);
                             }
@@ -351,6 +357,40 @@ public class InterviewTextProcessor implements TextProcessor {
      * 将结构化工具事件转为摘要文本追加到 toolBuffer，供落库 reasoning。
      * 调用记为"工具名(参数)"，结果记为"工具名 -> 结果摘要"。
      */
+    /**
+     * 按 toolCallId 合并工具事件到去重 Map: call 提供 name+args, result 补充 result。
+     * 流式 THINKING 增量会重复下发同一 ToolUseBlock, 合并后落库仅保留一条完整记录。
+     * callId 为 null 时退化为独立条目(用合成键), 保留原始行为。
+     */
+    private void mergeToolEvent(LinkedHashMap<String, AgentResult.ToolEvent> map,
+                                AtomicInteger nullIdSeq, AgentResult.ToolEvent te) {
+        if (te == null) {
+            return;
+        }
+        String callId = te.getToolCallId();
+        String key = (callId != null && !callId.isEmpty())
+                ? callId
+                : "__null_" + nullIdSeq.incrementAndGet();
+        AgentResult.ToolEvent merged = map.get(key);
+        if (merged == null) {
+            merged = new AgentResult.ToolEvent();
+            merged.setToolCallId(te.getToolCallId());
+            map.put(key, merged);
+        }
+        if (te.getName() != null) {
+            merged.setName(te.getName());
+        }
+        if (te.getArgs() != null && !te.getArgs().isEmpty()) {
+            merged.setArgs(te.getArgs());
+        }
+        if (te.isResultEvent()) {
+            merged.setResultEvent(true);
+            if (te.getResult() != null) {
+                merged.setResult(te.getResult());
+            }
+        }
+    }
+
     private void appendToolSummary(StringBuilder toolBuffer, AgentResult.ToolEvent te) {
         if (te == null) {
             return;
