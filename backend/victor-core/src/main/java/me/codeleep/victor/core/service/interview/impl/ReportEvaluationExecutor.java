@@ -37,6 +37,8 @@ import java.util.*;
 @RequiredArgsConstructor
 public class ReportEvaluationExecutor {
 
+    private static final String EVAL_TEAM_KEY = "system-team-evaluation";
+
     private final InterviewReportMapper interviewReportMapper;
     private final InterviewTurnMapper interviewTurnMapper;
     private final InterviewConfigMapper interviewConfigMapper;
@@ -67,51 +69,78 @@ public class ReportEvaluationExecutor {
         }
     }
 
+    /**
+     * 评估主流程。拆分为状态准备、上下文构建、团队调用、结果落库四个阶段，
+     * 任一阶段失败都会把报告标记为 FAILED 并记录原因，避免解析失败被静默吞掉后仍标记为 COMPLETED。
+     */
     private void doEvaluate(Long sessionId, Long reportId) {
         InterviewReport report = interviewReportMapper.selectById(reportId);
         if (report == null) {
             return;
         }
-        report.setStatus(InterviewReportStatus.EVALUATING);
-        interviewReportMapper.updateById(report);
+        markEvaluating(report);
 
         InterviewConfig config = interviewConfigMapper.selectById(sessionId);
         if (config == null) {
-            report.setStatus(InterviewReportStatus.FAILED);
-            report.setEvaluationError("面试会话不存在");
-            interviewReportMapper.updateById(report);
-            syncSessionStatus(sessionId, report.getStatus());
+            failReport(report, sessionId, "面试会话不存在");
             return;
         }
 
-        // 获取对话历史
+        try {
+            AgentContext context = buildEvalContext(config, sessionId);
+            AgentResult result = runEvaluationTeam(config, context);
+
+            if (!result.isSuccess() || result.getContent() == null) {
+                failReport(report, sessionId, result.getErrorMessage() != null
+                        ? result.getErrorMessage() : "评估团队未返回有效内容");
+                return;
+            }
+
+            if (!applyEvaluationResult(report, sessionId, result.getContent())) {
+                return;
+            }
+        } catch (Exception e) {
+            log.error("调用评估团队生成报告失败: sessionId={}, error={}", sessionId, e.getMessage(), e);
+            failReport(report, sessionId, e.getMessage());
+            return;
+        }
+
+        finalizeReport(report, sessionId);
+        log.info("面试报告生成完成: sessionId={}, reportId={}, reportStatus={}",
+                sessionId, report.getId(), report.getStatus());
+    }
+
+    /** 标记报告进入评估中。 */
+    private void markEvaluating(InterviewReport report) {
+        report.setStatus(InterviewReportStatus.EVALUATING);
+        interviewReportMapper.updateById(report);
+    }
+
+    /** 把报告标记为失败，写入错误原因并落默认值，同时同步会话状态。 */
+    private void failReport(InterviewReport report, Long sessionId, String error) {
+        report.setStatus(InterviewReportStatus.FAILED);
+        report.setEvaluationError(error);
+        setDefaultReportValues(report);
+        interviewReportMapper.updateById(report);
+        syncSessionStatus(sessionId, report.getStatus());
+        log.warn("面试报告生成失败: sessionId={}, reportId={}, error={}",
+                sessionId, report.getId(), error);
+    }
+
+    /** 拉取对话历史与岗位信息，组装评估上下文(user message)。 */
+    private AgentContext buildEvalContext(InterviewConfig config, Long sessionId) {
         List<InterviewTurn> turns = interviewTurnMapper.selectList(
                 new LambdaQueryWrapper<InterviewTurn>()
                         .eq(InterviewTurn::getSessionId, sessionId)
                         .orderByAsc(InterviewTurn::getCreatedAt)
         );
 
-        // 获取岗位信息
-        String jobName = "通用岗位";
-        if (config.getJobId() != null) {
-            Job job = jobMapper.selectById(config.getJobId());
-            if (job != null) {
-                jobName = job.getName();
-            }
-        }
-
-        // 统计题目数
+        String jobName = resolveJobName(config);
         int totalQuestions = (int) turns.stream()
                 .filter(t -> t.getSpeaker() == Speaker.AI && !Boolean.TRUE.equals(t.getIsHint()))
                 .count();
-
-        // 格式化对话历史
         String conversationHistory = formatConversationHistory(turns);
 
-        // 构建评估上下文
-        AgentContext context = new AgentContext(String.valueOf(sessionId), config.getUserId());
-
-        // 任务上下文作为 user message，具体报告指令由评估团队的 DB prompt 驱动
         String userMsg = String.format("""
                 请根据以下面试对话记录，生成一份详细的面试评估报告。
 
@@ -122,41 +151,60 @@ public class ReportEvaluationExecutor {
                 ## 完整对话记录
                 %s
                 """, jobName, totalQuestions, conversationHistory);
+
+        AgentContext context = new AgentContext(String.valueOf(sessionId), config.getUserId());
         context.setInput(userMsg);
+        return context;
+    }
 
-        // 获取评估团队
-        AgentTeamDefinition team = getTeamOrThrow(config);
-
-        try {
-            AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
-
-            if (result.isSuccess() && result.getContent() != null) {
-                Map<String, Object> evaluation = parseReportJson(result.getContent());
-
-                report.setStatus(InterviewReportStatus.COMPLETED);
-                report.setOverallScore(toBigDecimal(evaluation.get("overallScore")));
-                report.setDimensionScores(toDimensionScores(evaluation.get("dimensionScores")));
-                report.setStrengths(toString(evaluation.get("strengths")));
-                report.setWeaknesses(toString(evaluation.get("weaknesses")));
-                report.setSuggestions(toString(evaluation.get("suggestions")));
-                report.setSummary(toString(evaluation.get("summary")));
-                report.setGeneratedAt(LocalDateTime.now());
-            } else {
-                report.setStatus(InterviewReportStatus.FAILED);
-                report.setEvaluationError(result.getErrorMessage());
-                setDefaultReportValues(report);
-            }
-        } catch (Exception e) {
-            log.error("调用评估团队生成报告失败: sessionId={}, error={}", sessionId, e.getMessage(), e);
-            report.setStatus(InterviewReportStatus.FAILED);
-            report.setEvaluationError(e.getMessage());
-            setDefaultReportValues(report);
+    private String resolveJobName(InterviewConfig config) {
+        if (config.getJobId() == null) {
+            return "通用岗位";
         }
+        Job job = jobMapper.selectById(config.getJobId());
+        return job != null ? job.getName() : "通用岗位";
+    }
 
+    /** 构建评估团队并同步执行，返回评估结果。 */
+    private AgentResult runEvaluationTeam(InterviewConfig config, AgentContext context) {
+        AgentTeamDefinition team = getTeamOrThrow(config);
+        return agentRunner.run(
+                agentFactory.buildTeam(team, context.getSessionId(),
+                        String.valueOf(context.getUserId()), null),
+                context);
+    }
+
+    /** 解析评估团队原始输出并填充报告字段；解析失败则标记失败而非静默落默认值。 */
+    /** 解析评估团队原始输出并填充报告字段；解析失败则标记失败而非静默落默认值。返回是否成功。 */
+    private boolean applyEvaluationResult(InterviewReport report, Long sessionId, String rawContent) {
+        log.info("评估团队原始输出: sessionId={}, contentLen={}, content=[[[{}]]]",
+                sessionId, rawContent.length(), rawContent);
+
+        Map<String, Object> evaluation = reportJsonParser.parse(rawContent);
+        if (evaluation == null || evaluation.isEmpty()) {
+            failReport(report, sessionId,
+                    "评估团队输出无法解析为JSON，原始内容长度=" + rawContent.length()
+                            + "，原始内容=" + rawContent);
+            return false;
+        }
+        log.info("评估报告解析结果: sessionId={}, keys={}, evaluation={}",
+                sessionId, evaluation.keySet(), evaluation);
+
+        report.setStatus(InterviewReportStatus.COMPLETED);
+        report.setOverallScore(toBigDecimal(evaluation.get("overallScore")));
+        report.setDimensionScores(toDimensionScores(evaluation.get("dimensionScores")));
+        report.setStrengths(toString(evaluation.get("strengths")));
+        report.setWeaknesses(toString(evaluation.get("weaknesses")));
+        report.setSuggestions(toString(evaluation.get("suggestions")));
+        report.setSummary(toString(evaluation.get("summary")));
+        report.setGeneratedAt(LocalDateTime.now());
+        return true;
+    }
+
+    /** 持久化报告最终状态并同步面试会话状态。 */
+    private void finalizeReport(InterviewReport report, Long sessionId) {
         interviewReportMapper.updateById(report);
         syncSessionStatus(sessionId, report.getStatus());
-        log.info("面试报告生成完成: sessionId={}, reportId={}, reportStatus={}",
-                sessionId, report.getId(), report.getStatus());
     }
 
     /**
@@ -177,21 +225,7 @@ public class ReportEvaluationExecutor {
      */
     private AgentTeamDefinition getTeamOrThrow(InterviewConfig config) {
         List<String> teamConfig = config.getTeamConfig();
-        String evalKey = "system-team-evaluation";
-
-        // 从 teamConfig 中查找 evaluation key
-        String matchedKey = null;
-        if (teamConfig != null) {
-            for (String key : teamConfig) {
-                if (evalKey.equals(key)) {
-                    matchedKey = key;
-                    break;
-                }
-            }
-        }
-        if (matchedKey == null) {
-            matchedKey = evalKey;
-        }
+        String matchedKey = resolveEvalTeamKey(teamConfig);
 
         AgentTeam team = agentTeamMapper.selectOne(
                 new LambdaQueryWrapper<AgentTeam>()
@@ -209,6 +243,17 @@ public class ReportEvaluationExecutor {
         return teamDef;
     }
 
+    private String resolveEvalTeamKey(List<String> teamConfig) {
+        if (teamConfig != null) {
+            for (String key : teamConfig) {
+                if (EVAL_TEAM_KEY.equals(key)) {
+                    return key;
+                }
+            }
+        }
+        return EVAL_TEAM_KEY;
+    }
+
     private String formatConversationHistory(List<InterviewTurn> turns) {
         if (turns == null || turns.isEmpty()) {
             return "暂无对话历史";
@@ -219,12 +264,6 @@ public class ReportEvaluationExecutor {
             sb.append(speaker).append(": ").append(turn.getContent()).append("\n");
         }
         return sb.toString();
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> parseReportJson(String content) {
-        Map<String, Object> result = reportJsonParser.parse(content);
-        return result != null ? result : new HashMap<>();
     }
 
     private BigDecimal toBigDecimal(Object value) {

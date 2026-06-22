@@ -104,11 +104,19 @@ public class AdvanceQuestionTool implements AgentTool {
         if (config.getCurrentQuestionId() != null) {
             current = interviewQuestionMapper.selectById(config.getCurrentQuestionId());
         }
-        Integer currentOrder = current != null ? current.getOrderIndex() : 0;
+        if (current == null) {
+            // 首次调用，没有当前题，返回第一题
+            return interviewQuestionMapper.selectOne(
+                    new LambdaQueryWrapper<InterviewQuestion>()
+                            .eq(InterviewQuestion::getConfigId, config.getId())
+                            .orderByAsc(InterviewQuestion::getOrderIndex)
+                            .last("LIMIT 1")
+            );
+        }
         return interviewQuestionMapper.selectOne(
                 new LambdaQueryWrapper<InterviewQuestion>()
                         .eq(InterviewQuestion::getConfigId, config.getId())
-                        .gt(InterviewQuestion::getOrderIndex, currentOrder)
+                        .gt(InterviewQuestion::getOrderIndex, current.getOrderIndex())
                         .orderByAsc(InterviewQuestion::getOrderIndex)
                         .last("LIMIT 1")
         );
