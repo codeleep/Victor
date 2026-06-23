@@ -100,7 +100,7 @@ public class InterviewerFactory {
     private void injectContextIfEmpty(ReActAgent agent, String sessionId, String userId,
                                        String background, String currentQuestionContext) {
         try {
-            AgentState state = agent.getAgentState(sessionId, userId);
+            AgentState state = agent.getAgentState(userId, sessionId);
             List<Msg> context = state.getContext();
             if (context != null && !context.isEmpty()) {
                 // 冷启动恢复，已有记忆，不重复注入
@@ -152,7 +152,7 @@ public class InterviewerFactory {
      */
     public static void replaceCurrentQuestion(ReActAgent agent, String sessionId, String userId, String newContent) {
         try {
-            AgentState state = agent.getAgentState(sessionId, userId);
+            AgentState state = agent.getAgentState(userId, sessionId);
             List<Msg> messages = state.contextMutable();
             int replaceIndex = -1;
             for (int i = 0; i < messages.size(); i++) {
