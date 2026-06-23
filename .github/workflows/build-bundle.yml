@@ -132,6 +132,7 @@ jobs:
         with:
           path: bundles
           merge-multiple: true
+          pattern: victor-bundle-*
 
       - name: 上传产物到 Release
         uses: softprops/action-gh-release@v2
