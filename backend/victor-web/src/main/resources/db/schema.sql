@@ -375,7 +375,7 @@ CREATE INDEX idx_turn_question_id ON interview_turn (question_id);
 
 CREATE TABLE interview_report (
     id BIGSERIAL PRIMARY KEY,
-    session_id BIGINT NOT NULL UNIQUE REFERENCES interview_config(id),
+    session_id BIGINT NOT NULL UNIQUE REFERENCES interview_config(id) ON DELETE CASCADE,
     user_id BIGINT NOT NULL REFERENCES "user"(id),
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     overall_score DECIMAL(3,1),
