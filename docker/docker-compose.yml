@@ -1,22 +1,20 @@
 # Victor 编排文件 (开发与离线部署共用)
 #
-# 离线部署 (默认, 镜像已 docker load 载入):
+# 离线部署 (镜像已 docker load 载入, compose 不会重新构建):
 #   先编辑同目录 .env 修改 DB_PASSWORD / JWT_SECRET, 然后
 #   docker compose up -d
 #
-# 本地开发 (首次或改了 SQL/前端/后端后, 加 --profile dev 触发从源码构建):
-#   docker compose --profile dev up -d --build
+# 本地开发 (镜像尚未构建, 加 --build 触发从源码构建):
+#   docker compose up -d --build
 name: victor
 
 services:
   victor-app:
     image: victor-app:latest
     container_name: victor-app
-    # 仅 dev 模式从源码构建; 部署模式直接用已 load 的镜像
     build:
       context: ..
       dockerfile: docker/app/Dockerfile.runtime
-      profiles: [dev]
     environment:
       DB_HOST: victor-postgres
       DB_PORT: 5432
@@ -44,11 +42,9 @@ services:
   victor-postgres:
     image: victor-db:latest
     container_name: victor-postgres
-    # 仅 dev 模式从源码构建(把建表 SQL 打进镜像); 部署模式用已 load 的镜像
     build:
       context: ..
       dockerfile: docker/db/Dockerfile
-      profiles: [dev]
     environment:
       POSTGRES_DB: ${DB_NAME:-victor}
       POSTGRES_USER: ${DB_USERNAME:-postgres}
