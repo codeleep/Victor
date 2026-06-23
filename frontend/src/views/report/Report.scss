@@ -79,3 +79,105 @@
     padding: 20px;
   }
 }
+
+.per-question-card {
+  .ant-card-body {
+    padding-top: 8px;
+  }
+}
+
+.per-question-collapse {
+  .ant-collapse-header {
+    align-items: center;
+  }
+
+  .pq-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding-right: 8px;
+  }
+
+  .pq-title {
+    font-weight: 600;
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pq-score {
+    flex-shrink: 0;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .pq-body {
+    padding: 4px 0 8px;
+  }
+
+  .pq-interactions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: $bg-tertiary;
+    border-radius: $radius-md;
+  }
+
+  .pq-interaction {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .pq-role {
+    flex-shrink: 0;
+    width: 64px;
+    font-weight: 600;
+    font-size: 13px;
+    color: $text-secondary;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pq-followup-tag {
+    margin: 0;
+    line-height: 18px;
+    font-size: 12px;
+  }
+
+  .pq-content {
+    flex: 1;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .pq-ai .pq-role {
+    color: #4A6FA5;
+  }
+
+  .pq-user .pq-role {
+    color: #4A9E6E;
+  }
+
+  .pq-feedback {
+    padding-top: 12px;
+    border-top: 1px dashed $border-subtle;
+
+    .wmde-markdown {
+      font-size: 14px;
+      line-height: 1.8;
+    }
+  }
+
+  .pq-feedback-empty {
+    color: $text-secondary;
+    font-size: 14px;
+  }
+}

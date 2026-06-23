@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Card, Button, Space, Spin, message, Result } from 'antd'
+import { Card, Button, Space, Spin, message, Result, Collapse, Tag } from 'antd'
 import { ArrowLeftOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons'
 import MDEditor from '@uiw/react-md-editor'
 import { reportApi } from '@/api'
@@ -202,6 +202,7 @@ export default function ReportDetail() {
 
       <div style={{ marginBottom: 16 }}>
         <Space>
+          <Button icon={<ReloadOutlined />} loading={regenerating} onClick={handleRegenerate}>重新生成报告</Button>
           <Button icon={<DownloadOutlined />} onClick={handleExportPdf}>导出 PDF</Button>
           <Button icon={<DownloadOutlined />} onClick={handleExportMarkdown}>导出 Markdown</Button>
         </Space>
@@ -219,6 +220,58 @@ export default function ReportDetail() {
           <MDEditor.Markdown source={report.summary || '暂无总结'} />
         </Card>
       </div>
+
+      {report.perQuestionEvaluation && report.perQuestionEvaluation.length > 0 && (
+        <Card className="section-card per-question-card" title="逐题点评">
+          <Collapse
+            ghost
+            className="per-question-collapse"
+            defaultActiveKey={report.perQuestionEvaluation.map((_, i) => String(i + 1))}
+            items={report.perQuestionEvaluation.map((q, i) => {
+              const idx = q.questionIndex ?? i + 1
+              const score = typeof q.score === 'number' ? q.score : undefined
+              return {
+                key: String(idx),
+                label: (
+                  <div className="pq-header">
+                    <span className="pq-title">
+                      题目 {idx}
+                      {q.questionText ? `：${q.questionText}` : ''}
+                    </span>
+                    {score !== undefined && (
+                      <span className="pq-score" style={{ color: getScoreColor(score) }}>{score}</span>
+                    )}
+                  </div>
+                ),
+                children: (
+                  <div className="pq-body">
+                    {q.interactions && q.interactions.length > 0 && (
+                      <div className="pq-interactions">
+                        {q.interactions.map((it, j) => (
+                          <div key={j} className={`pq-interaction pq-${it.speaker === 'AI' ? 'ai' : 'user'}`}>
+                            <span className="pq-role">
+                              {it.role}
+                              {it.isFollowup && <Tag color="orange" className="pq-followup-tag">追问</Tag>}
+                            </span>
+                            <span className="pq-content">{it.content}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {q.feedback ? (
+                      <div className="pq-feedback">
+                        <MDEditor.Markdown source={q.feedback} />
+                      </div>
+                    ) : (
+                      <div className="pq-feedback-empty">暂无点评</div>
+                    )}
+                  </div>
+                ),
+              }
+            })}
+          />
+        </Card>
+      )}
 
       <Card className="section-card" title="优势">
         <MDEditor.Markdown source={report.strengths || '暂无数据'} />

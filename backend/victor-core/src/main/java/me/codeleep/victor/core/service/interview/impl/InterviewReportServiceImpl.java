@@ -6,17 +6,30 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.codeleep.victor.common.enums.InterviewConfigStatus;
 import me.codeleep.victor.common.enums.InterviewReportStatus;
+import me.codeleep.victor.common.enums.Speaker;
 import me.codeleep.victor.common.exception.BusinessException;
 import me.codeleep.victor.common.result.ResultCode;
 import me.codeleep.victor.core.entity.InterviewConfig;
+import me.codeleep.victor.core.entity.InterviewQuestion;
 import me.codeleep.victor.core.entity.InterviewReport;
+import me.codeleep.victor.core.entity.InterviewTurn;
 import me.codeleep.victor.core.mapper.InterviewConfigMapper;
+import me.codeleep.victor.core.mapper.InterviewQuestionMapper;
 import me.codeleep.victor.core.mapper.InterviewReportMapper;
+import me.codeleep.victor.core.mapper.InterviewTurnMapper;
 import me.codeleep.victor.core.service.converter.InterviewReportConverter;
 import me.codeleep.victor.core.service.dto.InterviewReportVO;
 import me.codeleep.victor.core.service.interview.InterviewReportService;
 import me.codeleep.victor.core.service.support.AsyncTaskRegistry;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 报告服务实现。
@@ -30,6 +43,8 @@ public class InterviewReportServiceImpl implements InterviewReportService {
 
     private final InterviewReportMapper interviewReportMapper;
     private final InterviewConfigMapper interviewConfigMapper;
+    private final InterviewQuestionMapper interviewQuestionMapper;
+    private final InterviewTurnMapper interviewTurnMapper;
     private final InterviewReportConverter reportConverter;
     private final ReportEvaluationExecutor reportEvaluationExecutor;
     private final AsyncTaskRegistry asyncTaskRegistry;
@@ -74,14 +89,17 @@ public class InterviewReportServiceImpl implements InterviewReportService {
             // 尚未创建报告记录,直接走正常生成流程
             return generateReport(sessionId);
         }
-        if (existing.getStatus() != InterviewReportStatus.FAILED) {
+        InterviewReportStatus prevStatus = existing.getStatus();
+        if (prevStatus != InterviewReportStatus.FAILED && prevStatus != InterviewReportStatus.COMPLETED) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "当前报告状态不支持重新生成");
         }
-        // 重置为待评估并重新触发异步评估
+        // 重置为待评估并重新触发异步评估；仅失败重试累计重试次数
         existing.setStatus(InterviewReportStatus.PENDING);
         existing.setEvaluationError(null);
-        int retry = existing.getEvaluationRetryCount() == null ? 0 : existing.getEvaluationRetryCount();
-        existing.setEvaluationRetryCount(retry + 1);
+        if (prevStatus == InterviewReportStatus.FAILED) {
+            int retry = existing.getEvaluationRetryCount() == null ? 0 : existing.getEvaluationRetryCount();
+            existing.setEvaluationRetryCount(retry + 1);
+        }
         interviewReportMapper.updateById(existing);
         interviewConfigMapper.update(null,
                 new LambdaUpdateWrapper<InterviewConfig>()
@@ -117,7 +135,12 @@ public class InterviewReportServiceImpl implements InterviewReportService {
         InterviewReport report = interviewReportMapper.selectOne(
                 new LambdaQueryWrapper<InterviewReport>().eq(InterviewReport::getSessionId, sessionId)
         );
-        return report != null ? reportConverter.toVO(report) : null;
+        if (report == null) {
+            return null;
+        }
+        InterviewReportVO vo = reportConverter.toVO(report);
+        enrichPerQuestionEvaluation(vo);
+        return vo;
     }
 
     @Override
@@ -128,7 +151,12 @@ public class InterviewReportServiceImpl implements InterviewReportService {
     @Override
     public InterviewReportVO getReportById(Long id) {
         InterviewReport report = interviewReportMapper.selectById(id);
-        return report != null ? reportConverter.toVO(report) : null;
+        if (report == null) {
+            return null;
+        }
+        InterviewReportVO vo = reportConverter.toVO(report);
+        enrichPerQuestionEvaluation(vo);
+        return vo;
     }
 
     @Override
@@ -170,7 +198,194 @@ public class InterviewReportServiceImpl implements InterviewReportService {
         md.append("\n## 总结\n\n");
         md.append(report.getSummary()).append("\n");
 
+        appendPerQuestionMarkdown(md, report);
+
         return md.toString();
     }
 
+    /**
+     * 将逐题点评与真实对话记录合并：以题目为维度，把追问及对应回答归入原题，
+     * 并叠加评估团队给出的单题评分与 Markdown 点评，供前端逐题展示。
+     */
+    private void enrichPerQuestionEvaluation(InterviewReportVO vo) {
+        if (vo == null || vo.getSessionId() == null
+                || vo.getStatus() != InterviewReportStatus.COMPLETED) {
+            return;
+        }
+        Long sessionId = vo.getSessionId();
+
+        List<InterviewQuestion> questions = interviewQuestionMapper.selectList(
+                new LambdaQueryWrapper<InterviewQuestion>()
+                        .eq(InterviewQuestion::getConfigId, sessionId)
+                        .orderByAsc(InterviewQuestion::getOrderIndex)
+        );
+        List<InterviewTurn> turns = interviewTurnMapper.selectList(
+                new LambdaQueryWrapper<InterviewTurn>()
+                        .eq(InterviewTurn::getSessionId, sessionId)
+                        .orderByAsc(InterviewTurn::getCreatedAt)
+        );
+
+        Map<Long, Map<String, Object>> evalByQuestion = new LinkedHashMap<>();
+        Map<Integer, Map<String, Object>> evalByIndex = new LinkedHashMap<>();
+        if (vo.getPerQuestionEvaluation() != null) {
+            for (Map<String, Object> item : vo.getPerQuestionEvaluation()) {
+                Long qid = toLong(item.get("questionId"));
+                if (qid != null) {
+                    evalByQuestion.put(qid, item);
+                }
+                Integer qidx = toInt(item.get("questionIndex"));
+                if (qidx != null) {
+                    evalByIndex.put(qidx, item);
+                }
+            }
+        }
+
+        Map<Long, List<InterviewTurn>> turnsByQuestion = new LinkedHashMap<>();
+        List<InterviewTurn> ungrouped = new ArrayList<>();
+        for (InterviewTurn turn : turns) {
+            if (turn.getQuestionId() == null) {
+                ungrouped.add(turn);
+            } else {
+                turnsByQuestion.computeIfAbsent(turn.getQuestionId(), k -> new ArrayList<>()).add(turn);
+            }
+        }
+
+        List<InterviewQuestion> ordered = new ArrayList<>(questions);
+        Set<Long> knownIds = new LinkedHashSet<>();
+        for (InterviewQuestion q : questions) {
+            if (q.getId() != null) {
+                knownIds.add(q.getId());
+            }
+        }
+        for (Long qid : turnsByQuestion.keySet()) {
+            if (!knownIds.contains(qid)) {
+                InterviewQuestion placeholder = new InterviewQuestion();
+                placeholder.setId(qid);
+                placeholder.setOrderIndex(Integer.MAX_VALUE);
+                ordered.add(placeholder);
+            }
+        }
+        ordered.sort(Comparator.comparingInt(q -> q.getOrderIndex() == null ? Integer.MAX_VALUE : q.getOrderIndex()));
+
+        List<Map<String, Object>> merged = new ArrayList<>();
+        int index = 0;
+        for (InterviewQuestion q : ordered) {
+            List<InterviewTurn> qTurns = turnsByQuestion.get(q.getId());
+            Map<String, Object> eval = evalByQuestion.get(q.getId());
+            boolean hasTurns = qTurns != null && !qTurns.isEmpty();
+            if (!hasTurns && eval == null) {
+                continue;
+            }
+            index++;
+            if (eval == null) {
+                eval = evalByIndex.get(index);
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("questionId", q.getId());
+            entry.put("questionIndex", index);
+            entry.put("questionText", q.getQuestionText() != null ? q.getQuestionText()
+                    : (eval != null ? toStr(eval.get("questionText")) : null));
+            entry.put("score", eval != null ? eval.get("score") : null);
+            entry.put("feedback", eval != null ? toStr(eval.get("feedback")) : null);
+            entry.put("interactions", buildInteractions(qTurns));
+            merged.add(entry);
+        }
+        vo.setPerQuestionEvaluation(merged);
+    }
+
+    private List<Map<String, Object>> buildInteractions(List<InterviewTurn> turns) {
+        List<Map<String, Object>> interactions = new ArrayList<>();
+        if (turns == null) {
+            return interactions;
+        }
+        int aiCount = 0;
+        for (InterviewTurn turn : turns) {
+            if (Boolean.TRUE.equals(turn.getIsHint())) {
+                continue;
+            }
+            boolean isAi = turn.getSpeaker() == Speaker.AI;
+            if (isAi) {
+                aiCount++;
+            }
+            Map<String, Object> interaction = new LinkedHashMap<>();
+            interaction.put("speaker", turn.getSpeaker() != null ? turn.getSpeaker().getValue() : null);
+            interaction.put("role", isAi ? "面试官" : "候选人");
+            interaction.put("content", turn.getContent());
+            interaction.put("isFollowup", isAi && aiCount > 1);
+            interactions.add(interaction);
+        }
+        return interactions;
+    }
+
+    private void appendPerQuestionMarkdown(StringBuilder md, InterviewReportVO report) {
+        if (report.getPerQuestionEvaluation() == null || report.getPerQuestionEvaluation().isEmpty()) {
+            return;
+        }
+        md.append("\n## 逐题点评\n\n");
+        for (Map<String, Object> q : report.getPerQuestionEvaluation()) {
+            md.append("### 题目 ").append(q.get("questionIndex"));
+            Object qText = q.get("questionText");
+            if (qText != null && !qText.toString().isBlank()) {
+                md.append("：").append(qText);
+            }
+            md.append("\n\n");
+            Object score = q.get("score");
+            if (score != null) {
+                md.append("**单题评分**: ").append(score).append("\n\n");
+            }
+            Object interactions = q.get("interactions");
+            if (interactions instanceof List && !((List<?>) interactions).isEmpty()) {
+                md.append("**对话记录**:\n\n");
+                for (Object item : (List<?>) interactions) {
+                    if (item instanceof Map) {
+                        Map<?, ?> it = (Map<?, ?>) item;
+                        Object role = it.get("role");
+                        Object content = it.get("content");
+                        boolean followup = Boolean.TRUE.equals(it.get("isFollowup"));
+                        md.append("> **").append(role);
+                        if (followup) {
+                            md.append("（追问）");
+                        }
+                        md.append("**: ").append(content).append("\n\n");
+                    }
+                }
+            }
+            Object feedback = q.get("feedback");
+            if (feedback != null && !feedback.toString().isBlank()) {
+                md.append("**点评**:\n\n").append(feedback).append("\n\n");
+            }
+        }
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        try {
+            return Long.valueOf(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Integer toInt(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        try {
+            return Integer.valueOf(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private String toStr(Object value) {
+        return value != null ? value.toString() : null;
+    }
 }

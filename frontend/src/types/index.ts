@@ -406,6 +406,22 @@ export interface InterviewAttachment {
 
 // ==================== 报告相关 ====================
 
+export interface QuestionInteraction {
+  speaker?: string
+  role: string
+  content?: string
+  isFollowup?: boolean
+}
+
+export interface PerQuestionEvaluation {
+  questionId?: number
+  questionIndex?: number
+  questionText?: string
+  score?: number
+  feedback?: string
+  interactions?: QuestionInteraction[]
+}
+
 export interface InterviewReportVO {
   id: number
   sessionId: number
@@ -413,7 +429,7 @@ export interface InterviewReportVO {
   status: InterviewReportStatus
   overallScore?: number
   dimensionScores?: Record<string, unknown>
-  perQuestionEvaluation?: Record<string, unknown>[]
+  perQuestionEvaluation?: PerQuestionEvaluation[]
   summary?: string
   strengths?: string
   weaknesses?: string

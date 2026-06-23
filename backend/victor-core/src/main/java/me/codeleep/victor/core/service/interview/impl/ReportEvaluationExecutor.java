@@ -41,6 +41,7 @@ public class ReportEvaluationExecutor {
 
     private final InterviewReportMapper interviewReportMapper;
     private final InterviewTurnMapper interviewTurnMapper;
+    private final InterviewQuestionMapper interviewQuestionMapper;
     private final InterviewConfigMapper interviewConfigMapper;
     private final JobMapper jobMapper;
     private final AgentTeamMapper agentTeamMapper;
@@ -127,19 +128,21 @@ public class ReportEvaluationExecutor {
                 sessionId, report.getId(), error);
     }
 
-    /** 拉取对话历史与岗位信息，组装评估上下文(user message)。 */
+    /** 拉取对话历史与岗位信息，按题目分组组装评估上下文(user message)。 */
     private AgentContext buildEvalContext(InterviewConfig config, Long sessionId) {
         List<InterviewTurn> turns = interviewTurnMapper.selectList(
                 new LambdaQueryWrapper<InterviewTurn>()
                         .eq(InterviewTurn::getSessionId, sessionId)
                         .orderByAsc(InterviewTurn::getCreatedAt)
         );
+        List<InterviewQuestion> questions = interviewQuestionMapper.selectList(
+                new LambdaQueryWrapper<InterviewQuestion>()
+                        .eq(InterviewQuestion::getConfigId, sessionId)
+                        .orderByAsc(InterviewQuestion::getOrderIndex)
+        );
 
         String jobName = resolveJobName(config);
-        int totalQuestions = (int) turns.stream()
-                .filter(t -> t.getSpeaker() == Speaker.AI && !Boolean.TRUE.equals(t.getIsHint()))
-                .count();
-        String conversationHistory = formatConversationHistory(turns);
+        String conversationHistory = formatGroupedConversation(questions, turns);
 
         String userMsg = String.format("""
                 请根据以下面试对话记录，生成一份详细的面试评估报告。
@@ -148,9 +151,9 @@ public class ReportEvaluationExecutor {
                 - 岗位: %s
                 - 总题目数: %d
 
-                ## 完整对话记录
+                ## 完整对话记录（按题目分组，追问归属于原题）
                 %s
-                """, jobName, totalQuestions, conversationHistory);
+                """, jobName, questions.size(), conversationHistory);
 
         AgentContext context = new AgentContext(String.valueOf(sessionId), config.getUserId());
         context.setInput(userMsg);
@@ -197,6 +200,7 @@ public class ReportEvaluationExecutor {
         report.setWeaknesses(toString(evaluation.get("weaknesses")));
         report.setSuggestions(toString(evaluation.get("suggestions")));
         report.setSummary(toString(evaluation.get("summary")));
+        report.setPerQuestionEvaluation(toPerQuestionEvaluation(evaluation.get("perQuestionEvaluation")));
         report.setGeneratedAt(LocalDateTime.now());
         return true;
     }
@@ -254,16 +258,71 @@ public class ReportEvaluationExecutor {
         return EVAL_TEAM_KEY;
     }
 
-    private String formatConversationHistory(List<InterviewTurn> turns) {
+    /**
+     * 按题目分组格式化对话记录：每题以 `### 题目 N (ID:X)` 开头，
+     * 题干单独列出，追问及其回答都归入同一题，便于评估团队逐题点评。
+     */
+    private String formatGroupedConversation(List<InterviewQuestion> questions, List<InterviewTurn> turns) {
         if (turns == null || turns.isEmpty()) {
             return "暂无对话历史";
         }
-        StringBuilder sb = new StringBuilder();
+        Map<Long, List<InterviewTurn>> turnsByQuestion = new LinkedHashMap<>();
+        List<InterviewTurn> ungrouped = new ArrayList<>();
         for (InterviewTurn turn : turns) {
-            String speaker = turn.getSpeaker() == Speaker.AI ? "面试官" : "候选人";
-            sb.append(speaker).append(": ").append(turn.getContent()).append("\n");
+            if (turn.getQuestionId() == null) {
+                ungrouped.add(turn);
+            } else {
+                turnsByQuestion.computeIfAbsent(turn.getQuestionId(), k -> new ArrayList<>()).add(turn);
+            }
         }
-        return sb.toString();
+
+        List<InterviewQuestion> ordered = new ArrayList<>(questions);
+        Set<Long> knownIds = new LinkedHashSet<>();
+        for (InterviewQuestion q : questions) {
+            if (q.getId() != null) {
+                knownIds.add(q.getId());
+            }
+        }
+        for (Long qid : turnsByQuestion.keySet()) {
+            if (!knownIds.contains(qid)) {
+                InterviewQuestion placeholder = new InterviewQuestion();
+                placeholder.setId(qid);
+                placeholder.setOrderIndex(Integer.MAX_VALUE);
+                ordered.add(placeholder);
+            }
+        }
+        ordered.sort(Comparator.comparingInt(q -> q.getOrderIndex() == null ? Integer.MAX_VALUE : q.getOrderIndex()));
+
+        StringBuilder sb = new StringBuilder();
+        int index = 0;
+        for (InterviewQuestion q : ordered) {
+            List<InterviewTurn> qTurns = turnsByQuestion.get(q.getId());
+            if (qTurns == null || qTurns.isEmpty()) {
+                continue;
+            }
+            index++;
+            sb.append("### 题目 ").append(index).append(" (ID:").append(q.getId()).append(")\n");
+            if (q.getQuestionText() != null && !q.getQuestionText().isBlank()) {
+                sb.append("题干: ").append(q.getQuestionText()).append("\n");
+            }
+            sb.append("对话:\n");
+            for (InterviewTurn turn : qTurns) {
+                if (Boolean.TRUE.equals(turn.getIsHint())) {
+                    continue;
+                }
+                String speaker = turn.getSpeaker() == Speaker.AI ? "面试官" : "候选人";
+                sb.append("[").append(speaker).append("] ").append(turn.getContent()).append("\n");
+            }
+            sb.append("\n");
+        }
+        if (!ungrouped.isEmpty()) {
+            sb.append("### 其他对话（未归属具体题目）\n");
+            for (InterviewTurn turn : ungrouped) {
+                String speaker = turn.getSpeaker() == Speaker.AI ? "面试官" : "候选人";
+                sb.append("[").append(speaker).append("] ").append(turn.getContent()).append("\n");
+            }
+        }
+        return sb.toString().trim();
     }
 
     private BigDecimal toBigDecimal(Object value) {
@@ -292,6 +351,20 @@ public class ReportEvaluationExecutor {
 
     private String toString(Object value) {
         return value != null ? value.toString() : "";
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> toPerQuestionEvaluation(Object value) {
+        if (value instanceof List) {
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object item : (List<Object>) value) {
+                if (item instanceof Map) {
+                    result.add(new LinkedHashMap<>((Map<String, Object>) item));
+                }
+            }
+            return result;
+        }
+        return List.of();
     }
 
     private void setDefaultReportValues(InterviewReport report) {
