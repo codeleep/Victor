@@ -99,6 +99,7 @@ export default function AppSidebar() {
           )
         })}
       </div>
+      <div className="sidebar-version">v{__APP_VERSION__}</div>
     </aside>
   )
 }

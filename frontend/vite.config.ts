@@ -1,10 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+declare const process: { env: Record<string, string | undefined> }
+
 export default defineConfig({
   plugins: [react()],
   define: {
     'process.env': {},
+    __APP_VERSION__: JSON.stringify(process.env.APP_VERSION || 'dev'),
   },
   resolve: {
     alias: {

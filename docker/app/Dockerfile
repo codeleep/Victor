@@ -1,6 +1,10 @@
 # ==================== Stage 1: Build Frontend ====================
 FROM node:20-alpine AS frontend-builder
 
+# 构建时注入版本号 (由 CI 通过 --build-arg 传入), 默认 dev
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -31,13 +35,13 @@ RUN apk add --no-cache nginx
 COPY --from=frontend-builder /build/frontend/dist /usr/share/nginx/html
 
 # Copy nginx config
-COPY docker/nginx.conf /etc/nginx/nginx.conf
+COPY docker/app/nginx.conf /etc/nginx/nginx.conf
 
 # Copy backend jar
 COPY --from=backend-builder /build/backend/victor-web/target/victor-web-1.0-SNAPSHOT.jar /app/victor-web.jar
 
 # Copy entrypoint
-COPY docker/entrypoint.sh /app/entrypoint.sh
+COPY docker/app/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Create upload directory

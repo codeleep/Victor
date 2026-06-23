@@ -105,7 +105,7 @@ Victor/
 │       ├── stores/              # Zustand 状态管理
 │       ├── utils/               # 请求、音频、WebSocket 等工具
 │       └── types/               # TypeScript 类型定义
-├── docker/                      # Docker 镜像、Nginx 与启动脚本
+├── docker/                      # 容器化: app/应用镜像  db/数据库镜像  离线分发脚本与编排
 ├── docs/                        # 项目文档与系统截图
 └── docker-compose.yml           # 一键启动配置
 ```

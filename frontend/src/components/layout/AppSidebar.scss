@@ -89,3 +89,17 @@
     }
   }
 }
+
+.sidebar-version {
+  margin-top: auto;
+  padding: 12px;
+  font-size: 11px;
+  color: $text-muted;
+  opacity: 0.6;
+  text-align: center;
+}
+
+.app-sidebar {
+  display: flex;
+  flex-direction: column;
+}
