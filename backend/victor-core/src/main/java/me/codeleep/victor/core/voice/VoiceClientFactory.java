@@ -33,7 +33,7 @@ public class VoiceClientFactory {
         log.info("Creating ASR client for provider: {}", provider);
 
         switch (provider) {
-            case DOUBAO:
+            case VOLCENGINE:
                 return createVolcAsrClient(config);
             default:
                 throw new UnsupportedOperationException("Unsupported ASR provider: " + provider);
@@ -51,7 +51,7 @@ public class VoiceClientFactory {
         log.info("Creating TTS client for provider: {}", provider);
 
         switch (provider) {
-            case DOUBAO:
+            case VOLCENGINE:
                 return createVolcTtsClient(config);
             default:
                 throw new UnsupportedOperationException("Unsupported TTS provider: " + provider);

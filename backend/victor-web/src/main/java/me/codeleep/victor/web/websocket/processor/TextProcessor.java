@@ -5,7 +5,8 @@ import reactor.core.publisher.Flux;
 /**
  * 文本处理器接口。
  *
- * <p>处理ASR识别后的文本，返回句子流。</p>
+ * <p>处理ASR识别后的文本，返回带种类的片段流（answer/thinking/tool）。
+ * answer 片段用于落库与 TTS；thinking/tool 仅供前端实时展示。</p>
  *
  * <h3>使用场景：</h3>
  * <ul>
@@ -13,47 +14,19 @@ import reactor.core.publisher.Flux;
  *   <li>复读机（直接返回原文）</li>
  *   <li>实时翻译</li>
  * </ul>
- *
- * <h3>示例：</h3>
- * <pre>
- * {@code
- * // LLM处理器
- * @Component
- * public class LlmTextProcessor implements TextProcessor {
- *     @Override
- *     public Flux<String> process(ProcessingContext context, String text) {
- *         return chatModel.stream(prompt)
- *             .map(response -> response.getResult().getOutput().getText())
- *             .filter(chunk -> chunk != null && !chunk.isEmpty())
- *             .windowUntil(this::isCompleteSentence)
- *             .flatMap(window -> window.collectList()
- *                 .map(chunks -> String.join("", chunks)));
- *     }
- * }
- *
- * // 复读机处理器
- * @Component
- * public class EchoTextProcessor implements TextProcessor {
- *     @Override
- *     public Flux<String> process(ProcessingContext context, String text) {
- *         return Flux.just(text);
- *     }
- * }
- * }
- * </pre>
  */
 public interface TextProcessor {
 
     /**
      * 流式处理方法。
      *
-     * <p>返回句子流，每个元素是一个完整的句子，可以直接发送给TTS。</p>
+     * <p>返回片段流，每个元素携带文本与种类。answer 片段建议为完整句子以便 TTS 合成。</p>
      *
      * @param context 处理上下文
      * @param text    ASR识别的原始文本
-     * @return 句子流，每个元素是一个完整句子
+     * @return 片段流
      */
-    Flux<String> process(ProcessingContext context, String text);
+    Flux<StreamChunk> process(ProcessingContext context, String text);
 
     /**
      * 获取处理器名称。

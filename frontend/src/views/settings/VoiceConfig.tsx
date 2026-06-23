@@ -13,7 +13,7 @@ const providerOptions = [
   { label: '阿里云', value: 'ALIYUN' },
   { label: '腾讯云', value: 'TENCENT' },
   { label: '通义千问', value: 'QWEN' },
-  { label: '豆包', value: 'DOUBAO' },
+  { label: '火山方舟', value: 'VOLCENGINE' },
   { label: 'Azure', value: 'AZURE' },
   { label: 'OpenAI', value: 'OPENAI' },
 ]

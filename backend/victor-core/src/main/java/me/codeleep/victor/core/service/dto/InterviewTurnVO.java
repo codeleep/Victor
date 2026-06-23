@@ -27,6 +27,16 @@ public class InterviewTurnVO {
 
     private String content;
 
+    /**
+     * 推理过程文本（仅 AI turn），前端折叠展示
+     */
+    private String reasoning;
+
+    /**
+     * 结构化工具事件列表（仅 AI turn），前端渲染为任务块时间线
+     */
+    private List<Object> toolEvents;
+
     private List<Object> attachments;
 
     private Boolean isHint;

@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Button, Input, Select, App, Drawer, Tabs } from 'antd'
+import { Button, Input, Select, App, Drawer, Tabs, Modal, Spin, Result, Card } from 'antd'
 import {
   ArrowLeftOutlined, SendOutlined, BulbOutlined, AudioOutlined, StopOutlined,
-  EditOutlined, CodeOutlined
+  EditOutlined, CodeOutlined, FileTextOutlined, ReloadOutlined
 } from '@ant-design/icons'
 import MDEditor from '@uiw/react-md-editor'
 import { Excalidraw } from '@excalidraw/excalidraw'
 import Editor from '@monaco-editor/react'
-import { interviewSessionApi } from '@/api'
+import { interviewSessionApi, reportApi } from '@/api'
 import { createInterviewWs, createAsrWs, createTtsWs, WsConnection } from '@/utils/websocket'
 import { AudioRecorder, AudioPlayer } from '@/utils/audio'
 import type {
@@ -16,9 +16,15 @@ import type {
   InterviewErrorMessage, InterviewStatusMessage, InterviewSessionVO,
   InterviewTurnVO, SessionStatus,
   AsrServerMessage, AsrStreamChunkMessage, AsrStreamEndMessage, TtsServerMessage,
-  InterviewAttachment
+  InterviewAttachment, InterviewReportVO
 } from '@/types'
 import './InterviewRoom.scss'
+import { TaskBlock, type ToolEventItem } from './components/TaskBlock'
+
+interface ThinkingBlock { kind: 'thinking'; text: string; agentName?: string }
+interface ToolBlock { kind: 'tool'; tool: ToolEventItem }
+interface AnswerBlock { kind: 'answer'; text: string }
+type TurnBlock = ThinkingBlock | ToolBlock | AnswerBlock
 
 interface ChatMessage {
   id: number
@@ -28,6 +34,97 @@ interface ChatMessage {
   attachments?: InterviewAttachment[]
   isHint?: boolean
   createdAt: string
+  turnBlocks?: TurnBlock[]
+  reasoning?: string
+  toolEvents?: ToolEventItem[]
+}
+
+// 渲染 AI 回合的有序内容块序列(参考 gemini-cli 布局): 思考边框气泡 + 工具时间线 + 回答 Markdown。
+// 历史回放: 折叠的推理过程区(thinking文本 + 工具时间线), 默认折叠, 点击展开
+// 将历史回放的 reasoning(思考+工具合并文本) + toolEvents + content 还原为 TurnBlock 序列,
+// 使历史与实时统一用 TurnBlocksView 渲染。顺序: 思考块 → 工具块 → 回答块。
+function reasoningToBlocks(reasoning: string | undefined, tools: ToolEventItem[] | undefined, content: string): TurnBlock[] {
+  const blocks: TurnBlock[] = []
+  if (reasoning) {
+    // 后端 buildReasoning 会在思考文本后追加 "### 工具调用", 取该标题之前的纯思考部分
+    const marker = reasoning.indexOf('### 工具调用')
+    const thinking = (marker >= 0 ? reasoning.slice(0, marker) : reasoning).trim()
+    if (thinking) blocks.push({ kind: 'thinking', text: thinking })
+  }
+  if (tools && tools.length > 0) {
+    for (const t of tools) {
+      blocks.push({ kind: 'tool', tool: t })
+    }
+  }
+  if (content && content.trim()) {
+    blocks.push({ kind: 'answer', text: content })
+  }
+  return blocks
+}
+
+function TurnBlocksView({ blocks, streaming }: { blocks: TurnBlock[]; streaming?: boolean }) {
+  const [toolExpanded, setToolExpanded] = useState<Record<number | string, boolean>>({})
+  const toggleTool = (id: number | string) => setToolExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  if (blocks.length === 0) return null
+
+  // 拆分: 过程块(思考 + 工具) 与 回答块; 回答始终可见, 过程整体可折叠
+  const processBlocks = blocks.filter(b => b.kind === 'thinking' || b.kind === 'tool')
+  const answerBlocks = blocks.filter(b => b.kind === 'answer')
+  const hasProcess = processBlocks.length > 0
+  const toolCount = processBlocks.filter(b => b.kind === 'tool').length
+  const thinkingCount = processBlocks.filter(b => b.kind === 'thinking').length
+  const answerText = answerBlocks.map(b => (b as AnswerBlock).text).join('')
+
+  // 流式时过程始终展开; 完成后默认折叠, 可点击展开
+  const [processOpen, setProcessOpen] = useState(false)
+  const processExpanded = streaming ? true : processOpen
+
+  return (
+    <div className="turn-blocks">
+      {hasProcess && (
+        <div className="turn-process-card">
+          <button className="turn-process-header" type="button" onClick={() => !streaming && setProcessOpen(v => !v)}>
+            <span className="reasoning-chevron">{processExpanded ? '▾' : '▸'}</span>
+            <span className="turn-process-title">{streaming ? '正在思考...' : '推理过程'}</span>
+            <span className="turn-process-summary">
+              {thinkingCount > 0 && `${thinkingCount} 步思考`}
+              {thinkingCount > 0 && toolCount > 0 && ' · '}
+              {toolCount > 0 && `${toolCount} 个工具调用`}
+            </span>
+          </button>
+          {processExpanded && (
+            <div className="turn-process-body">
+              {processBlocks.map((block, idx) => {
+                if (block.kind === 'thinking') {
+                  return (
+                    <div className="turn-thinking" key={`t-${idx}`}>
+                      <MDEditor.Markdown source={block.text} style={{ background: 'transparent' }} />
+                    </div>
+                  )
+                }
+                // tool: 直接渲染 TaskBlock(带节点连线), 不再套 TaskTimeline 外壳
+                const tool = (block as ToolBlock).tool
+                return (
+                  <div className="turn-tool-item" key={`tool-${idx}`}>
+                    <div className="turn-tool-node" />
+                    <div className="turn-tool-content">
+                      <TaskBlock tool={{ ...tool, expanded: !!toolExpanded[tool.id] }} onToggle={() => toggleTool(tool.id)} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {answerText && (
+        <div className="message-content">
+          <MDEditor.Markdown source={answerText} style={{ background: 'transparent' }} />
+          {streaming && <span className="cursor-blink">|</span>}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function normalizeAttachment(attachment: unknown): InterviewAttachment | undefined {
@@ -181,7 +278,7 @@ export default function InterviewRoom() {
   const [inputText, setInputText] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [aiStreaming, setAiStreaming] = useState(false)
-  const [aiStreamText, setAiStreamText] = useState('')
+  const [aiTurnBlocks, setAiTurnBlocks] = useState<TurnBlock[]>([])
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('IN_PROGRESS')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [wsConnected, setWsConnected] = useState(false)
@@ -198,6 +295,9 @@ export default function InterviewRoom() {
   const [previewAttachments, setPreviewAttachments] = useState<InterviewAttachment[]>([])
   const [previewAttachmentKey, setPreviewAttachmentKey] = useState('0')
   const [previewFitKey, setPreviewFitKey] = useState(0)
+  const [reportModalOpen, setReportModalOpen] = useState(false)
+  const [reportData, setReportData] = useState<InterviewReportVO | null>(null)
+  const [reportLoading, setReportLoading] = useState(false)
 
   // Refs
   const conversationRef = useRef<HTMLDivElement>(null)
@@ -209,11 +309,13 @@ export default function InterviewRoom() {
   const excalidrawDataRef = useRef<any>(null)
   const timerRef = useRef<number | null>(null)
   const waitingFirstQuestionRef = useRef(true)
-  const aiStreamTextRef = useRef('')
+  const aiTurnBlocksRef = useRef<TurnBlock[]>([])
+  const toolSeqRef = useRef(0)
   const canInputRef = useRef(false)
   const isLoadingRef = useRef(false)
   const isVoiceModeRef = useRef(false)
   const sessionStatusRef = useRef<SessionStatus>('IN_PROGRESS')
+  const reportPollRef = useRef<number | null>(null)
 
   const [isVoiceMode, setIsVoiceMode] = useState(false)
   const canInput = sessionStatus === 'IN_PROGRESS' && wsConnected
@@ -305,6 +407,11 @@ export default function InterviewRoom() {
       setSession(data)
       setSessionStatus(data.status)
 
+      // 进入时若报告仍在生成中,启动轮询直至就绪/失败
+      if (data.status === 'COMPLETED' || data.status === 'REPORT_GENERATING') {
+        startReportPolling()
+      }
+
       // Detect voice mode from config
       let voiceMode = false
       if (data.configId) {
@@ -323,6 +430,30 @@ export default function InterviewRoom() {
       const history = await interviewSessionApi.getHistory(sessionId)
       const historyMessages: ChatMessage[] = history.map((h: InterviewTurnVO) => {
         const legacy = splitLegacyDrawingContent(h.content)
+        // 历史工具事件去重: 旧数据可能因流式增量未去重而存储大量重复条目,
+        // 按 name+args 合并(后者补充 result), 与实时渲染的按 ID 去重效果一致
+        const dedupedTools = (h.toolEvents ?? []).reduce((acc, t) => {
+          const key = `${t.name}::${JSON.stringify(t.args ?? null)}`
+          const exist = acc.find(x => `${x.name}::${JSON.stringify(x.args ?? null)}` === key)
+          if (exist) {
+            if (t.result != null) exist.result = t.result
+          } else {
+            acc.push({ ...t })
+          }
+          return acc
+        }, [] as NonNullable<typeof h.toolEvents>)
+        const rawTools = dedupedTools.map((t, i) => ({
+          id: i + 1,
+          name: t.name,
+          args: t.args,
+          result: t.result,
+          status: 'success' as const,
+          expanded: false,
+        }))
+        // 还原为 TurnBlock 序列, 与实时渲染统一
+        const turnBlocks = (h.speaker === 'AI' || h.speaker === 'INTERVIEWER')
+          ? reasoningToBlocks(h.reasoning, rawTools.length > 0 ? rawTools : undefined, legacy.content)
+          : undefined
         return {
           id: h.id,
           sessionId: h.sessionId,
@@ -331,6 +462,7 @@ export default function InterviewRoom() {
           attachments: normalizeAttachments(h.attachments).length > 0 ? normalizeAttachments(h.attachments) : legacy.attachments,
           isHint: h.isHint,
           createdAt: h.createdAt,
+          turnBlocks: turnBlocks && turnBlocks.length > 0 ? turnBlocks : undefined,
         }
       })
       setMessages(historyMessages)
@@ -351,6 +483,7 @@ export default function InterviewRoom() {
 
   const cleanup = () => {
     if (timerRef.current) clearInterval(timerRef.current)
+    stopReportPolling()
     interviewWsRef.current?.close()
     asrWsRef.current?.close()
     ttsWsRef.current?.close()
@@ -492,6 +625,81 @@ export default function InterviewRoom() {
     interviewWsRef.current.connect()
   }
 
+  // 将一个 stream chunk 按 kind 追加到有序内容块序列(参考 gemini-cli 布局)
+  // 同类型连续合并; 工具 call/result 配对合并为单个 ToolEventItem
+  const appendChunkToBlocks = (blocks: TurnBlock[], chunk: InterviewStreamChunkMessage, seq: () => number): TurnBlock[] => {
+    const kind = chunk.kind ?? 'answer'
+    const next = blocks.slice()
+    if (kind === 'thinking') {
+      const text = chunk.text ?? ''
+      const last = next[next.length - 1]
+      if (last && last.kind === 'thinking') {
+        next[next.length - 1] = { ...last, text: last.text + text }
+      } else {
+        next.push({ kind: 'thinking', text })
+      }
+      return next
+    }
+    if (kind === 'answer') {
+      const text = chunk.text ?? ''
+      const last = next[next.length - 1]
+      if (last && last.kind === 'answer') {
+        next[next.length - 1] = { ...last, text: last.text + text }
+      } else {
+        next.push({ kind: 'answer', text })
+      }
+      return next
+    }
+    // tool_call / tool_result: 按 tool.id 去重(流式增量会重复下发同一工具调用,取最新覆盖)
+    const tool = chunk.tool
+    const name = tool?.name ?? '未知工具'
+    const toolId = tool?.id
+    if (kind === 'tool_call') {
+      // 已存在同 id 的工具块: 用最新 args 覆盖(流式参数逐步累积完整)
+      const existIdx = toolId ? next.findIndex(b => b.kind === 'tool' && String(b.tool.id) === toolId) : -1
+      if (existIdx >= 0) {
+        const old = next[existIdx] as ToolBlock
+        next[existIdx] = { kind: 'tool', tool: { ...old.tool, name, args: tool?.args ?? old.tool.args } }
+      } else {
+        next.push({
+          kind: 'tool',
+          tool: { id: toolId ?? seq(), name, args: tool?.args, status: 'running', expanded: false },
+        })
+      }
+      return next
+    }
+    // tool_result: 优先按 id 配对,其次按同名 running 的 call, 补充结果
+    const idIdx = toolId ? next.findIndex(b => b.kind === 'tool' && String(b.tool.id) === toolId) : -1
+    const idx = idIdx >= 0
+      ? -1
+      : [...next].reverse().findIndex(b => b.kind === 'tool' && b.tool.name === name && b.tool.status === 'running')
+    if (idIdx >= 0) {
+      const tb = next[idIdx] as ToolBlock
+      next[idIdx] = {
+        kind: 'tool',
+        tool: { ...tb.tool, result: tool?.result, status: 'success' },
+      }
+    } else if (idx >= 0) {
+      const realIdx = next.length - 1 - idx
+      const tb = next[realIdx] as ToolBlock
+      next[realIdx] = {
+        kind: 'tool',
+        tool: { ...tb.tool, result: tool?.result, status: 'success' },
+      }
+    } else {
+      // 未找到配对 call(丢失), 直接作为单独工具块
+      next.push({
+        kind: 'tool',
+        tool: { id: seq(), name, result: tool?.result, status: 'success', expanded: false },
+      })
+    }
+    return next
+  }
+
+  // 从内容块序列提取 answer 文本(用于落库 content 与 TTS)
+  const extractAnswerText = (blocks: TurnBlock[]): string =>
+    blocks.filter(b => b.kind === 'answer').map(b => (b as AnswerBlock).text).join('').trim()
+
   // Interview message handler
   const handleInterviewMessage = (msg: InterviewServerMessage) => {
     switch (msg.type) {
@@ -508,34 +716,39 @@ export default function InterviewRoom() {
         break
       }
       case 'interview.stream_begin':
-        aiStreamTextRef.current = ''
+        aiTurnBlocksRef.current = []
+        toolSeqRef.current = 0
         setAiStreaming(true)
-        setAiStreamText('')
+        setAiTurnBlocks([])
         isLoadingRef.current = false
         setIsLoading(false)
         break
       case 'interview.stream_chunk': {
         const m = msg as InterviewStreamChunkMessage
-        const nextText = aiStreamTextRef.current + m.text
-        aiStreamTextRef.current = nextText
-        setAiStreamText(nextText)
+        // 按 kind 分流到不同内容块: thinking/tool/answer 各成独立区块
+        const blocks = appendChunkToBlocks(aiTurnBlocksRef.current, m, () => ++toolSeqRef.current)
+        aiTurnBlocksRef.current = blocks
+        setAiTurnBlocks(blocks)
         scrollToBottom()
         break
       }
-      case 'interview.stream_end':
-        if (aiStreamTextRef.current) {
+      case 'interview.stream_end': {
+        const blocks = aiTurnBlocksRef.current
+        const answerText = extractAnswerText(blocks)
+        if (answerText || blocks.length > 0) {
           const aiMsg: ChatMessage = {
             id: Date.now(),
             sessionId,
             speaker: 'AI',
-            content: aiStreamTextRef.current,
+            content: answerText,
+            turnBlocks: blocks.length > 0 ? blocks : undefined,
             createdAt: new Date().toISOString(),
           }
           setMessages(prev => [...prev, aiMsg])
 
-          // TTS
-          if (isVoiceModeRef.current && ttsWsRef.current?.connected) {
-            const ttsText = stripMarkdown(aiStreamTextRef.current)
+          // TTS: 只朗读 answer 块文本, thinking/tool 不朗读
+          if (isVoiceModeRef.current && ttsWsRef.current?.connected && answerText) {
+            const ttsText = stripMarkdown(answerText)
             if (ttsText) {
               ttsWsRef.current.sendJson({ type: 'tts.stream_begin' })
               ttsWsRef.current.sendJson({ type: 'tts.stream_chunk', text: ttsText })
@@ -544,10 +757,11 @@ export default function InterviewRoom() {
           }
         }
         setAiStreaming(false)
-        aiStreamTextRef.current = ''
-        setAiStreamText('')
+        aiTurnBlocksRef.current = []
+        setAiTurnBlocks([])
         scrollToBottom()
         break
+      }
       case 'interview.reconnected': {
         const m = msg as InterviewReconnectedMessage
         message.info(`重连成功，历史对话 ${m.historyTurns} 轮`)
@@ -632,13 +846,83 @@ export default function InterviewRoom() {
       sessionStatusRef.current = 'COMPLETED'
       setSessionStatus('COMPLETED')
       cleanup()
+      // 面试结束后异步生成报告,轮询状态直到报告就绪/失败
+      startReportPolling()
     } catch (error) {
       console.error('Failed to complete:', error)
     }
   }
 
-  const goToReport = () => {
-    navigate(`/report/${sessionId}`)
+  // 复盘模式: 面试已结束(含评估中/失败/放弃),只读查看历史
+  const isReviewMode =
+    sessionStatus === 'COMPLETED' || sessionStatus === 'REPORT_GENERATING' ||
+    sessionStatus === 'REPORT_COMPLETED' || sessionStatus === 'REPORT_FAILED' ||
+    sessionStatus === 'ABANDONED'
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return '#4A9E6E'
+    if (score >= 60) return '#D4A843'
+    return '#C45A4A'
+  }
+
+  const loadReport = async () => {
+    setReportLoading(true)
+    try {
+      const data = await reportApi.getBySessionId(sessionId)
+      setReportData(data)
+    } catch (error) {
+      console.error('Failed to load report:', error)
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  const openReportModal = () => {
+    setReportModalOpen(true)
+  }
+
+  const closeReportModal = () => {
+    setReportModalOpen(false)
+  }
+
+  // 报告弹窗打开期间,会话状态变化后刷新报告内容(生成中 -> 完成/失败)
+  useEffect(() => {
+    if (reportModalOpen) {
+      loadReport()
+    }
+  }, [reportModalOpen, sessionStatus])
+
+  const stopReportPolling = () => {
+    if (reportPollRef.current) {
+      clearInterval(reportPollRef.current)
+      reportPollRef.current = null
+    }
+  }
+
+  // 轮询会话状态,报告生成中 -> 就绪/失败时停止
+  const startReportPolling = () => {
+    stopReportPolling()
+    reportPollRef.current = window.setInterval(async () => {
+      try {
+        const data = await interviewSessionApi.getById(sessionId)
+        setSessionStatus(data.status)
+        if (data.status !== 'COMPLETED' && data.status !== 'REPORT_GENERATING') {
+          stopReportPolling()
+        }
+      } catch (error) {
+        console.error('Failed to poll report status:', error)
+      }
+    }, 4000)
+  }
+
+  const handleRegenerateReport = async () => {
+    try {
+      await reportApi.regenerateBySessionId(sessionId)
+      setSessionStatus('REPORT_GENERATING')
+      startReportPolling()
+    } catch (error) {
+      console.error('Failed to regenerate report:', error)
+    }
   }
 
   const requestHint = async () => {
@@ -669,8 +953,8 @@ export default function InterviewRoom() {
     if (interviewWsRef.current?.connected) {
       interviewWsRef.current.sendJson({ type: 'interview.interrupt', interruptType: 'LLM_RESPONSE' })
       setAiStreaming(false)
-      aiStreamTextRef.current = ''
-      setAiStreamText('')
+      aiTurnBlocksRef.current = []
+      setAiTurnBlocks([])
       isLoadingRef.current = false
       setIsLoading(false)
     }
@@ -732,7 +1016,9 @@ export default function InterviewRoom() {
   const getStatusLabel = () => {
     return sessionStatus === 'IN_PROGRESS' ? '进行中' :
       sessionStatus === 'PAUSED' ? '已暂停' :
-      sessionStatus === 'COMPLETED' ? '已完成' : '已放弃'
+      sessionStatus === 'COMPLETED' || sessionStatus === 'REPORT_GENERATING' ? '评估中' :
+      sessionStatus === 'REPORT_COMPLETED' ? '已完成' :
+      sessionStatus === 'REPORT_FAILED' ? '评估失败' : '已放弃'
   }
 
   const openAttachmentDrawer = (attachments: InterviewAttachment[], index: number) => {
@@ -760,9 +1046,13 @@ export default function InterviewRoom() {
               {getStatusLabel()}
             </div>
             <div className="ws-indicators">
-              <div className={`ws-indicator ${wsConnected ? 'connected' : 'disconnected'}`}>
-                {connectionLabel}
-              </div>
+              {isReviewMode ? (
+                <div className="ws-indicator review-mode">复盘模式 · 只读</div>
+              ) : (
+                <div className={`ws-indicator ${wsConnected ? 'connected' : 'disconnected'}`}>
+                  {connectionLabel}
+                </div>
+              )}
             </div>
           </div>
           <div className="interview-timer">{formatTime(elapsedSeconds)}</div>
@@ -778,14 +1068,16 @@ export default function InterviewRoom() {
                     {getSenderName(msg)}
                     {msg.isHint && <span className="hint-tag">提示</span>}
                   </div>
-                  {(msg.content || !msg.attachments?.length) && (
+                  {(msg.speaker === 'AI' || msg.speaker === 'INTERVIEWER') && msg.turnBlocks && msg.turnBlocks.length > 0 ? (
+                    <TurnBlocksView blocks={msg.turnBlocks} />
+                  ) : (msg.content || !msg.attachments?.length) ? (
                     <div className="message-content">
                       <MDEditor.Markdown
                         source={msg.content}
                         style={{ background: 'transparent' }}
                       />
                     </div>
-                  )}
+                  ) : null}
                   {msg.speaker === 'USER' && Boolean(msg.attachments?.length) && (
                     <div className="attachment-chip-row">
                       {msg.attachments?.map((attachment, attachmentIndex) => (
@@ -812,10 +1104,13 @@ export default function InterviewRoom() {
                 <div className="message-avatar">AI</div>
                 <div className="message-body">
                   <div className="message-sender">面试官</div>
-                  <div className="message-content streaming">
-                    <MDEditor.Markdown source={aiStreamText} style={{ background: 'transparent' }} />
-                    <span className="cursor-blink">|</span>
-                  </div>
+                  {aiTurnBlocks.length > 0 ? (
+                    <TurnBlocksView blocks={aiTurnBlocks} streaming />
+                  ) : (
+                    <div className="message-content streaming">
+                      <span className="cursor-blink">|</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -841,6 +1136,8 @@ export default function InterviewRoom() {
           )}
 
           <div className="input-area">
+            {!isReviewMode && (
+            <>
             {showAttachmentEditor && (
               <div className={`attachment-editor-panel ${(hasDrawing || codeText.trim()) ? 'has-attachment' : ''}`}>
                 <Tabs
@@ -975,6 +1272,8 @@ export default function InterviewRoom() {
                 {isRecording ? '正在聆听，录音结束后会自动发送识别结果' : '录音识别完成后会自动发送，无需再点发送'}
               </div>
             )}
+            </>
+            )}
 
             <div className="action-buttons">
               {sessionStatus === 'IN_PROGRESS' && (
@@ -987,8 +1286,9 @@ export default function InterviewRoom() {
               {sessionStatus === 'PAUSED' && (
                 <Button type="primary" onClick={handleResume}>继续面试</Button>
               )}
-              {sessionStatus === 'COMPLETED' && (
-                <Button type="primary" onClick={goToReport}>查看报告</Button>
+              {(sessionStatus === 'COMPLETED' || sessionStatus === 'REPORT_GENERATING' ||
+                sessionStatus === 'REPORT_COMPLETED' || sessionStatus === 'REPORT_FAILED') && (
+                <Button type="primary" icon={<FileTextOutlined />} onClick={openReportModal}>查看报告</Button>
               )}
             </div>
           </div>
@@ -1108,6 +1408,74 @@ export default function InterviewRoom() {
           </div>
         )}
       </Drawer>
+
+      <Modal
+        title="面试评估报告"
+        open={reportModalOpen}
+        onCancel={closeReportModal}
+        footer={null}
+        width="min(92vw, 1080px)"
+        destroyOnClose
+      >
+        {reportLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+            <Spin size="large" />
+          </div>
+        ) : reportData && (reportData.status === 'PENDING' || reportData.status === 'EVALUATING') ? (
+          <Result
+            icon={<Spin />}
+            status="info"
+            title="报告生成中"
+            subTitle="评估团队正在分析面试记录，完成后将自动展示。"
+          />
+        ) : reportData && reportData.status === 'FAILED' ? (
+          <Result
+            status="error"
+            title="报告生成失败"
+            subTitle={reportData.evaluationError || '评估过程中出现异常，请重试。'}
+            extra={
+              <Button icon={<ReloadOutlined />} onClick={handleRegenerateReport}>重新生成报告</Button>
+            }
+          />
+        ) : reportData ? (
+          <div className="report-modal-body">
+            <div className="report-overview">
+              <Card className="score-card">
+                <div className="score-ring" style={{ color: getScoreColor(reportData.overallScore || 0) }}>
+                  {reportData.overallScore || '-'}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>综合评分</div>
+              </Card>
+              <Card className="summary-card" title="总结">
+                <MDEditor.Markdown source={reportData.summary || '暂无总结'} />
+              </Card>
+            </div>
+            <Card className="section-card" title="优势" style={{ marginTop: 12 }}>
+              <MDEditor.Markdown source={reportData.strengths || '暂无数据'} />
+            </Card>
+            <Card className="section-card" title="不足" style={{ marginTop: 12 }}>
+              <MDEditor.Markdown source={reportData.weaknesses || '暂无数据'} />
+            </Card>
+            <Card className="section-card" title="改进建议" style={{ marginTop: 12 }}>
+              <MDEditor.Markdown source={reportData.suggestions || '暂无数据'} />
+            </Card>
+            {reportData.dimensionScores && (
+              <Card className="section-card" title="维度评分" style={{ marginTop: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
+                  {Object.entries(reportData.dimensionScores as Record<string, number>).map(([key, value]) => (
+                    <div key={key} style={{ padding: 12, background: '#F5F3EC', borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: '#5A5A58', marginBottom: 4 }}>{key}</div>
+                      <div style={{ fontSize: 20, fontWeight: 600, color: getScoreColor(value) }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
+        ) : (
+          <Result status="info" title="报告不存在或尚未生成" />
+        )}
+      </Modal>
     </div>
   )
 }

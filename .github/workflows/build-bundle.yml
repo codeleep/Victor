@@ -1,0 +1,153 @@
+name: Build & Bundle
+
+# 触发条件: 仅指定格式的三段式版本 tag
+#   v1.0.0        -> 构建 + 发布 Release (附带产物)
+#   v1.0.0-dev    -> 仅构建 (产物留在 Actions, 不创建 Release)
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+      - 'v[0-9]*.[0-9]*.[0-9]*-dev*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '三段式版本号 (如 1.0.0 或 1.0.0-dev, 留空则用 0.1.0)'
+        required: false
+        default: '0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [amd64, arm64]
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      is_dev: ${{ steps.ver.outputs.is_dev }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 计算并校验三段式版本号
+        id: ver
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            v="${{ inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            v="${GITHUB_REF_NAME#v}"   # 去掉 v 前缀
+          else
+            v="0.1.0"
+          fi
+          # 校验三段式 x.y.z 或 x.y.z-dev (允许 -dev 及 -dev.N 后缀)
+          if ! echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-dev(\.[0-9]+)?)?$'; then
+            echo "::error::版本号必须是三段式 x.y.z 或 x.y.z-dev, 当前: $v"
+            exit 1
+          fi
+          # dev 尾缀判定
+          if echo "$v" | grep -qE -- '-dev'; then
+            is_dev="true"
+          else
+            is_dev="false"
+          fi
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
+          echo "is_dev=${is_dev}" >> "$GITHUB_OUTPUT"
+          echo "本次构建版本: ${v} (dev=${is_dev})"
+
+      - name: 安装 QEMU (arm64 跨平台构建)
+        if: matrix.platform == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: 安装 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建应用镜像 (版本号 + latest, 注入 APP_VERSION)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/app/Dockerfile
+          platforms: linux/${{ matrix.platform }}
+          tags: |
+            victor-app:${{ steps.ver.outputs.version }}
+            victor-app:latest
+          build-args: |
+            APP_VERSION=${{ steps.ver.outputs.version }}
+          load: true
+          cache-from: type=gha,scope=app-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=app-${{ matrix.platform }}
+
+      - name: 构建数据库镜像 (版本号 + latest)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/db/Dockerfile
+          platforms: linux/${{ matrix.platform }}
+          tags: |
+            victor-db:${{ steps.ver.outputs.version }}
+            victor-db:latest
+          load: true
+          cache-from: type=gha,scope=db-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=db-${{ matrix.platform }}
+
+      - name: 组装离线分发包
+        run: |
+          set -e
+          PLATFORM="${{ matrix.platform }}"
+          VERSION="${{ steps.ver.outputs.version }}"
+          ROOT="bundle/victor"
+          mkdir -p "$ROOT/images"
+
+          docker save \
+            victor-app:${VERSION} victor-app:latest \
+            victor-db:${VERSION} victor-db:latest \
+            -o "$ROOT/images/victor-images.tar"
+
+          cp docker/docker-compose.yml "$ROOT/docker-compose.yml"
+          cp docker/deploy.sh        "$ROOT/deploy.sh"
+          cp docker/deploy.bat       "$ROOT/deploy.bat"
+          cp docker/.env.template    "$ROOT/.env"
+          cp docker/DEPLOY.md        "$ROOT/README.md"
+          chmod +x "$ROOT/deploy.sh"
+
+          if [ "$PLATFORM" = "amd64" ]; then ARCH="x86_64"; else ARCH="arm64"; fi
+          (cd bundle && zip -r "victor-${VERSION}-${ARCH}.zip" victor)
+
+      - name: 上传构件
+        uses: actions/upload-artifact@v4
+        with:
+          name: victor-bundle-${{ matrix.platform }}
+          path: bundle/*.zip
+          retention-days: 14
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    # 仅 tag 触发 且 非 dev 版本 才发布 Release
+    if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.is_dev != 'true'
+    steps:
+      - name: 下载构件
+        uses: actions/download-artifact@v4
+        with:
+          path: bundles
+          merge-multiple: true
+
+      - name: 发布 Release (附产物下载)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bundles/*.zip
+          generate_release_notes: true
+          body: |
+            ## 下载与部署
+
+            根据你的系统架构选择对应压缩包:
+            - `victor-${{ needs.build.outputs.version }}-x86_64.zip` — Windows / Linux (Intel/AMD)
+            - `victor-${{ needs.build.outputs.version }}-arm64.zip` — Mac (Apple Silicon) / ARM 服务器
+
+            解压后编辑 `.env` 修改 `DB_PASSWORD` 与 `JWT_SECRET`, 双击 `deploy.bat` (Windows) 或执行 `sh deploy.sh` (macOS/Linux) 即可启动。
+
+            访问 http://localhost:80 , 默认账号 `admin` / `admin123`。
+
+            详细说明见包内 README.md。

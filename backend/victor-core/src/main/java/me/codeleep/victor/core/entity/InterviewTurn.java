@@ -54,6 +54,17 @@ public class InterviewTurn {
     private String content;
 
     /**
+     * 推理过程文本（仅 AI turn：thinking + tool 内容合并），用于前端折叠展示
+     */
+    private String reasoning;
+
+    /**
+     * 结构化工具事件列表（仅 AI turn），前端渲染为任务块时间线
+     */
+    @TableField(typeHandler = JsonbTypeHandler.class)
+    private List<Object> toolEvents;
+
+    /**
      * 附件列表：音频/图片/代码/Mermaid图等
      */
     @TableField(typeHandler = JsonbTypeHandler.class)

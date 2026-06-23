@@ -26,6 +26,8 @@ public class ProcessingContext {
     public static final String ATTR_CURRENT_QUESTION_ID = "currentQuestionId";
     /** 属性 key：Agent 定义（会话初始化时构建，不可变） */
     public static final String ATTR_AGENT_DEFINITION = "agentDefinition";
+    /** 属性 key：面试官实例（持有常驻 ReActAgent） */
+    public static final String ATTR_INTERVIEWER = "interviewer";
     /** 属性 key：本次用户原始文本（不包含绘图 JSON 提示块） */
     public static final String ATTR_INPUT_TEXT = "inputText";
     /** 属性 key：本次用户附件列表 */

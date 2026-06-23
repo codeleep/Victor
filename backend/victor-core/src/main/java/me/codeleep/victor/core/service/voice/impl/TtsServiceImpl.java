@@ -31,7 +31,7 @@ public class TtsServiceImpl implements TtsService {
 
         VoiceServiceProvider provider = config.getProvider();
         switch (provider) {
-            case DOUBAO:
+            case VOLCENGINE:
                 return synthesizeWithVolc(text, config);
             case OPENAI:
             default:

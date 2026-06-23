@@ -32,15 +32,15 @@ export type TeamExecutionMode = 'PARALLEL' | 'SEQUENTIAL'
 
 export type InterviewMode = 'VOICE' | 'TEXT'
 
-export type InterviewConfigStatus = 'DRAFT' | 'GENERATING' | 'GENERATE_FAILED' | 'READY' | 'ARCHIVED'
+export type InterviewConfigStatus = 'DRAFT' | 'GENERATING' | 'GENERATE_FAILED' | 'READY' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'REPORT_GENERATING' | 'REPORT_COMPLETED' | 'REPORT_FAILED' | 'ABANDONED' | 'ARCHIVED'
 
-export type SessionStatus = 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'ABANDONED'
+export type SessionStatus = 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'REPORT_GENERATING' | 'REPORT_COMPLETED' | 'REPORT_FAILED' | 'ABANDONED'
 
 export type InterviewReportStatus = 'PENDING' | 'EVALUATING' | 'COMPLETED' | 'FAILED'
 
 export type RecallStrategy = 'VECTOR' | 'KEYWORD' | 'HYBRID'
 
-export type LlmProtocol = 'OPENAI' | 'CLAUDE' | 'QWEN' | 'DOUBAO'
+export type LlmProtocol = 'OPENAI' | 'CLAUDE' | 'QWEN' | 'VOLCENGINE'
 
 export type ModelType = 'INFERENCE' | 'EMBEDDING'
 
@@ -48,7 +48,7 @@ export type ResumeStatus = 'PENDING' | 'PARSED' | 'EMBEDDED'
 
 export type Speaker = 'AI' | 'USER' | 'CANDIDATE' | 'INTERVIEWER'
 
-export type VoiceServiceProvider = 'ALIYUN' | 'TENCENT' | 'QWEN' | 'DOUBAO' | 'AZURE' | 'OPENAI'
+export type VoiceServiceProvider = 'ALIYUN' | 'TENCENT' | 'QWEN' | 'VOLCENGINE' | 'AZURE' | 'OPENAI'
 
 // ==================== 用户相关 ====================
 
@@ -193,6 +193,14 @@ export interface ExperienceRequest {
   skills?: string[]
   attachments?: string[]
 }
+
+// ==================== Agent 可用工具 ====================
+
+export interface ToolVO {
+  name: string
+  description: string
+}
+
 
 // ==================== Agent 相关 ====================
 
@@ -373,9 +381,20 @@ export interface InterviewTurnVO {
   speaker: Speaker
   isFollowup?: boolean
   content: string
+  /** 推理过程文本（仅 AI turn），前端折叠展示 */
+  reasoning?: string
+  /** 结构化工具事件列表（仅 AI turn），前端渲染为任务块时间线 */
+  toolEvents?: ToolEventItem[]
   attachments?: InterviewAttachment[]
   isHint?: boolean
   createdAt: string
+}
+
+export interface ToolEventItem {
+  name: string
+  args?: Record<string, unknown>
+  result?: string
+  type: 'call' | 'result'
 }
 
 export interface InterviewAttachment {
@@ -519,9 +538,20 @@ export interface InterviewStreamBeginMessage {
   type: 'interview.stream_begin'
 }
 
+export interface ToolData {
+  id?: string
+  name: string
+  args?: Record<string, unknown>
+  result?: string
+}
+
 export interface InterviewStreamChunkMessage {
   type: 'interview.stream_chunk'
-  text: string
+  text?: string
+  /** 片段种类：answer/thinking/tool_call/tool_result，缺省视为 answer */
+  kind?: 'answer' | 'thinking' | 'tool_call' | 'tool_result'
+  /** 工具结构化数据（tool_call/tool_result 时携带） */
+  tool?: ToolData
   attachments?: InterviewAttachment[]
 }
 

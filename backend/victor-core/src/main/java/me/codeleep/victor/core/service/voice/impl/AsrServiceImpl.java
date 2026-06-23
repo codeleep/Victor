@@ -33,7 +33,7 @@ public class AsrServiceImpl implements AsrService {
 
         VoiceServiceProvider provider = config.getProvider();
         switch (provider) {
-            case DOUBAO:
+            case VOLCENGINE:
                 return recognizeWithVolc(audioData, config);
             case OPENAI:
             default:

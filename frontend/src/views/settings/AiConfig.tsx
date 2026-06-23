@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Card, Table, Button, Tag, Space, Tabs, Modal, Form, Input, Select, InputNumber, Switch, App, Popconfirm } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, RocketOutlined } from '@ant-design/icons'
-import { agentApi, agentTeamApi, agentLlmConfigApi, systemApi } from '@/api'
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { agentApi, agentTeamApi, agentLlmConfigApi } from '@/api'
 import { useMetadataStore } from '@/stores/metadata'
 import type { AgentVO, AgentRequest, AgentTeamVO, TeamRequest, TeamMemberDTO, AgentLlmConfigVO, AgentLlmConfigRequest } from '@/types'
 import './Settings.scss'
@@ -137,6 +137,8 @@ function AgentPanel() {
   const [data, setData] = useState<AgentVO[]>([])
   const [llmOptions, setLlmOptions] = useState<{ label: string; value: number }[]>([])
   const [llmOptionsLoading, setLlmOptionsLoading] = useState(false)
+  const [toolOptions, setToolOptions] = useState<{ label: string; value: string }[]>([])
+  const [toolOptionsLoading, setToolOptionsLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -161,16 +163,26 @@ function AgentPanel() {
     } catch (e) { console.error(e) } finally { setLlmOptionsLoading(false) }
   }
 
+  const loadToolOptions = async () => {
+    setToolOptionsLoading(true)
+    try {
+      const tools = await agentApi.listTools()
+      setToolOptions(tools.map(t => ({ label: t.name + (t.description ? ' - ' + t.description : ''), value: t.name })))
+    } catch (e) { console.error(e) } finally { setToolOptionsLoading(false) }
+  }
+
   const handleAdd = async () => {
     setEditingId(null); setEditingSystem(false); form.resetFields()
     await loadLlmOptions()
+    await loadToolOptions()
     setModalOpen(true)
   }
   const handleEdit = async (row: AgentVO) => {
     setEditingId(row.id)
     setEditingSystem(!!row.isSystem)
-    form.setFieldsValue({ name: row.name, role: row.role, systemPrompt: row.systemPrompt, type: row.type, llmConfigId: row.llmConfigId })
+    form.setFieldsValue({ name: row.name, role: row.role, systemPrompt: row.systemPrompt, type: row.type, llmConfigId: row.llmConfigId, availableTools: row.availableTools || [] })
     await loadLlmOptions()
+    await loadToolOptions()
     setModalOpen(true)
   }
   const handleSubmit = async () => {
@@ -180,7 +192,7 @@ function AgentPanel() {
         let payload: AgentRequest
         if (editingSystem) {
           // 系统Agent只提交 systemPrompt 和 llmConfigId
-          payload = { name: values.name, systemPrompt: values.systemPrompt, llmConfigId: values.llmConfigId }
+          payload = { name: values.name, systemPrompt: values.systemPrompt, llmConfigId: values.llmConfigId, availableTools: values.availableTools }
         } else {
           payload = values as AgentRequest
         }
@@ -250,6 +262,17 @@ function AgentPanel() {
               options={llmOptions}
             />
           </Form.Item>
+          <Form.Item name="availableTools" label="可用工具">
+            <Select
+              mode="multiple"
+              placeholder="选择该 Agent 可调用的工具"
+              optionFilterProp="label"
+              loading={toolOptionsLoading}
+              options={toolOptions}
+              allowClear
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
           <Form.Item name="systemPrompt" label="系统提示词">
             <Input.TextArea rows={6} placeholder="请输入系统提示词" />
           </Form.Item>
@@ -297,8 +320,17 @@ function LlmPanel() {
   const handleDelete = async (id: number) => {
     try { await agentLlmConfigApi.delete(id); message.success('删除成功'); loadConfigs() } catch (e) { console.error(e) }
   }
+  const [testing, setTesting] = useState<number | null>(null)
   const handleTest = async (id: number) => {
-    try { await agentLlmConfigApi.testConnection(id); message.success('连接成功') } catch (e) { /* interceptor 已显示错误 */ }
+    setTesting(id)
+    try {
+      await agentLlmConfigApi.testConnection(id)
+      message.success('连接成功')
+    } catch (e) {
+      message.error('连接测试失败')
+    } finally {
+      setTesting(null)
+    }
   }
   const handleSetDefault = async (id: number) => {
     try { await agentLlmConfigApi.setDefault(id); message.success('已设为默认'); loadConfigs() } catch (e) { console.error(e) }
@@ -320,7 +352,7 @@ function LlmPanel() {
       title: '操作', key: 'action', width: 260,
       render: (_: unknown, r: AgentLlmConfigVO) => (
         <Space>
-          <Button type="link" onClick={() => handleTest(r.id)}>测试</Button>
+          <Button type="link" loading={testing === r.id} onClick={() => handleTest(r.id)}>测试</Button>
           {!r.isDefault && <Button type="link" onClick={() => handleSetDefault(r.id)}>设为默认</Button>}
           <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(r)}>编辑</Button>
           <Popconfirm title="确定删除？" onConfirm={() => handleDelete(r.id)}>
@@ -344,7 +376,7 @@ function LlmPanel() {
           <Form.Item name="apiEndpoint" label="API 端点" rules={[{ required: true }]}><Input placeholder="请输入 API 端点" /></Form.Item>
           <Form.Item name="apiKey" label="API Key"><Input.Password placeholder="请输入 API Key" /></Form.Item>
           <Form.Item name="protocol" label="协议" rules={[{ required: true }]}>
-            <Select options={[{ label: 'OpenAI', value: 'OPENAI' }, { label: 'Claude', value: 'CLAUDE' }, { label: '通义千问', value: 'QWEN' }, { label: '豆包', value: 'DOUBAO' }]} />
+            <Select options={[{ label: 'OpenAI', value: 'OPENAI' }, { label: 'Claude', value: 'CLAUDE' }, { label: '通义千问', value: 'QWEN' }, { label: '火山方舟', value: 'VOLCENGINE' }]} />
           </Form.Item>
           <Form.Item name="modelName" label="模型名称" rules={[{ required: true }]}><Input placeholder="如: gpt-4, claude-3-opus" /></Form.Item>
           <Form.Item name="modelType" label="模型类型">
@@ -365,37 +397,10 @@ function LlmPanel() {
   )
 }
 export default function AiConfig() {
-  const { message } = App.useApp()
-  const [initLoading, setInitLoading] = useState(false)
-  const [initialized, setInitialized] = useState<boolean | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  useEffect(() => {
-    systemApi.initStatus().then(setInitialized).catch(() => setInitialized(false))
-  }, [])
-
-  const handleInit = async () => {
-    setInitLoading(true)
-    try {
-      const result = await systemApi.init()
-      if (result.skipped) {
-        message.info('系统已初始化，无需重复操作')
-      } else {
-        message.success('系统初始化成功')
-      }
-      setInitialized(true)
-      setRefreshKey(k => k + 1)
-    } catch (e) {
-      message.error('系统初始化失败')
-    } finally {
-      setInitLoading(false)
-    }
-  }
-
   const items = [
-    { key: 'teams', label: 'Agent 团队', children: <AgentTeamPanel key={`team-${refreshKey}`} /> },
-    { key: 'agents', label: 'Agent 配置', children: <AgentPanel key={`agent-${refreshKey}`} /> },
-    { key: 'llm', label: 'LLM 配置', children: <LlmPanel key={`llm-${refreshKey}`} /> },
+    { key: 'teams', label: 'Agent 团队', children: <AgentTeamPanel /> },
+    { key: 'agents', label: 'Agent 配置', children: <AgentPanel /> },
+    { key: 'llm', label: 'LLM 配置', children: <LlmPanel /> },
   ]
 
   return (
@@ -404,16 +409,6 @@ export default function AiConfig() {
         <div className="header-left">
           <h1>AI 配置</h1>
           <p>管理 Agent、团队和 LLM 模型配置</p>
-        </div>
-        <div className="header-right">
-          <Button
-            type="primary"
-            icon={<RocketOutlined />}
-            loading={initLoading}
-            onClick={handleInit}
-          >
-            {initialized ? '重新初始化' : '一键初始化'}
-          </Button>
         </div>
       </div>
       <Card className="table-card">

@@ -1,30 +1,71 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, Button, Table, Tag, Space, Tooltip, message, Popconfirm } from 'antd'
-import { PlusOutlined, PlayCircleOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
-import { interviewConfigApi, interviewSessionApi } from '@/api'
-import type { InterviewConfigVO, InterviewSessionVO } from '@/types'
+import { PlusOutlined, PlayCircleOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, FileTextOutlined, LoadingOutlined, HistoryOutlined } from '@ant-design/icons'
+import { interviewConfigApi, interviewSessionApi, reportApi } from '@/api'
+import type { InterviewConfigVO, InterviewConfigStatus } from '@/types'
 import './Index.scss'
+
+const STATUS_TAG_MAP: Record<string, { color: string; text: string }> = {
+  DRAFT: { color: 'default', text: '草稿' },
+  GENERATING: { color: 'processing', text: '生成中' },
+  GENERATE_FAILED: { color: 'error', text: '生成失败' },
+  READY: { color: 'success', text: '就绪' },
+  IN_PROGRESS: { color: 'processing', text: '进行中' },
+  PAUSED: { color: 'warning', text: '已暂停' },
+  COMPLETED: { color: 'processing', text: '评估中' },
+  REPORT_GENERATING: { color: 'processing', text: '评估中' },
+  REPORT_COMPLETED: { color: 'success', text: '已出报告' },
+  REPORT_FAILED: { color: 'error', text: '评估失败' },
+  ABANDONED: { color: 'default', text: '已放弃' },
+  ARCHIVED: { color: 'warning', text: '已归档' },
+}
+
+const isReportGenerating = (s: InterviewConfigStatus) => s === 'COMPLETED' || s === 'REPORT_GENERATING'
+const isReportReady = (s: InterviewConfigStatus) => s === 'REPORT_COMPLETED'
+const isReportFailed = (s: InterviewConfigStatus) => s === 'REPORT_FAILED'
+const isInterviewing = (s: InterviewConfigStatus) => s === 'IN_PROGRESS' || s === 'PAUSED'
+// 面试已开始(进入会话及之后)即不可编辑配置
+const isInterviewStarted = (s: InterviewConfigStatus) =>
+  s === 'IN_PROGRESS' || s === 'PAUSED' || s === 'COMPLETED' ||
+  s === 'REPORT_GENERATING' || s === 'REPORT_COMPLETED' || s === 'REPORT_FAILED' || s === 'ABANDONED'
+// 面试已结束(含放弃)可进入只读复盘
+const isReviewable = (s: InterviewConfigStatus) =>
+  s === 'COMPLETED' || s === 'REPORT_GENERATING' || s === 'REPORT_COMPLETED' ||
+  s === 'REPORT_FAILED' || s === 'ABANDONED'
 
 export default function InterviewIndex() {
   const navigate = useNavigate()
   const [configs, setConfigs] = useState<InterviewConfigVO[]>([])
-  const [sessions, setSessions] = useState<InterviewSessionVO[]>([])
   const [loading, setLoading] = useState(true)
+  const [regeneratingReport, setRegeneratingReport] = useState<number | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     loadConfigs()
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+    }
   }, [])
 
+  // 存在评估中的会话时,轮询刷新状态,生成完成后按钮自动可点击
+  useEffect(() => {
+    const hasGenerating = configs.some((c) => isReportGenerating(c.status))
+    if (hasGenerating && !timerRef.current) {
+      timerRef.current = setInterval(loadConfigs, 4000)
+    } else if (!hasGenerating && timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }, [configs])
+
   const loadConfigs = async () => {
-    setLoading(true)
     try {
-      const [configData, sessionData] = await Promise.all([
-        interviewConfigApi.list(),
-        interviewSessionApi.list()
-      ])
+      const configData = await interviewConfigApi.list()
       setConfigs(configData)
-      setSessions(sessionData)
     } catch (error) {
       console.error('Failed to load configs:', error)
     } finally {
@@ -64,17 +105,13 @@ export default function InterviewIndex() {
 
   const handleStart = async (configId: number) => {
     try {
-      const existing = sessions.find(s => s.configId === configId)
-      if (existing?.status === 'IN_PROGRESS' || existing?.status === 'PAUSED') {
-        navigate(`/interview/room/${existing.id}`)
+      const config = configs.find((c) => c.id === configId)
+      if (isInterviewing(config?.status as InterviewConfigStatus)) {
+        navigate(`/interview/room/${configId}`)
         return
       }
-      if (existing?.status === 'COMPLETED') {
-        message.warning('该面试已完成，不能再次进入')
-        return
-      }
-      if (existing?.status === 'ABANDONED') {
-        message.warning('该面试已放弃，不能再次进入')
+      if (config?.status !== 'READY') {
+        message.warning('当前状态无法开始面试')
         return
       }
       const sessionId = await interviewSessionApi.create(configId)
@@ -84,7 +121,116 @@ export default function InterviewIndex() {
     }
   }
 
-  const getSessionByConfigId = (configId: number) => sessions.find(s => s.configId === configId)
+  const handleViewReport = (id: number) => {
+    navigate(`/report/${id}`)
+  }
+
+  const handleRegenerateReport = async (id: number) => {
+    try {
+      setRegeneratingReport(id)
+      await reportApi.regenerateBySessionId(id)
+      message.success('已重新提交评估')
+      await loadConfigs()
+    } catch (error) {
+      console.error('Failed to regenerate report:', error)
+    } finally {
+      setRegeneratingReport(null)
+    }
+  }
+
+  const renderStatus = (status: string, record: InterviewConfigVO) => {
+    const info = STATUS_TAG_MAP[status] || { color: 'default', text: status }
+    const tag = <Tag color={info.color}>{info.text}</Tag>
+    if (status === 'GENERATE_FAILED' && record.generateError) {
+      return <Tooltip title={record.generateError}>{tag}</Tooltip>
+    }
+    return tag
+  }
+
+  const renderStartButton = (record: InterviewConfigVO) => {
+    if (isInterviewing(record.status)) {
+      return (
+        <Button
+          type="link"
+          icon={<PlayCircleOutlined />}
+          onClick={() => handleStart(record.id)}
+        >
+          {record.status === 'PAUSED' ? '继续' : '进入'}
+        </Button>
+      )
+    }
+    if (record.status === 'READY') {
+      return (
+        <Button
+          type="link"
+          icon={<PlayCircleOutlined />}
+          onClick={() => handleStart(record.id)}
+        >
+          开始
+        </Button>
+      )
+    }
+    return null
+  }
+
+  const renderReportButton = (record: InterviewConfigVO) => {
+    if (isReportGenerating(record.status)) {
+      // 评估中:禁止点击进入报告
+      return (
+        <Tooltip title="报告生成中，请稍候">
+          <Button type="link" disabled icon={<LoadingOutlined />}>
+            报告生成中
+          </Button>
+        </Tooltip>
+      )
+    }
+    if (isReportReady(record.status)) {
+      return (
+        <Button
+          type="link"
+          icon={<FileTextOutlined />}
+          onClick={() => handleViewReport(record.id)}
+        >
+          查看报告
+        </Button>
+      )
+    }
+    if (isReportFailed(record.status)) {
+      return (
+        <Button
+          type="link"
+          icon={<ReloadOutlined />}
+          loading={regeneratingReport === record.id}
+          onClick={() => handleRegenerateReport(record.id)}
+        >
+          重新生成报告
+        </Button>
+      )
+    }
+    if (record.status === 'ABANDONED') {
+      return (
+        <Button type="link" disabled>
+          已放弃
+        </Button>
+      )
+    }
+    return null
+  }
+
+  const renderReviewButton = (record: InterviewConfigVO) => {
+    if (isReviewable(record.status)) {
+      return (
+        <Button
+          type="link"
+          icon={<HistoryOutlined />}
+          onClick={() => navigate(`/interview/room/${record.id}`)}
+        >
+          复盘
+        </Button>
+      )
+    }
+    return null
+  }
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
@@ -106,21 +252,7 @@ export default function InterviewIndex() {
       dataIndex: 'status',
       key: 'status',
       width: 100,
-      render: (status: string, record: InterviewConfigVO) => {
-        const map: Record<string, { color: string; text: string }> = {
-          DRAFT: { color: 'default', text: '草稿' },
-          GENERATING: { color: 'processing', text: '生成中' },
-          GENERATE_FAILED: { color: 'error', text: '生成失败' },
-          READY: { color: 'success', text: '就绪' },
-          ARCHIVED: { color: 'warning', text: '已归档' }
-        }
-        const info = map[status] || { color: 'default', text: status }
-        const tag = <Tag color={info.color}>{info.text}</Tag>
-        if (status === 'GENERATE_FAILED' && record.generateError) {
-          return <Tooltip title={record.generateError}>{tag}</Tooltip>
-        }
-        return tag
-      }
+      render: (status: string, record: InterviewConfigVO) => renderStatus(status, record)
     },
     {
       title: '创建时间',
@@ -132,34 +264,26 @@ export default function InterviewIndex() {
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 260,
       render: (_: unknown, record: InterviewConfigVO) => (
         <Space>
-          {(() => {
-            const existing = getSessionByConfigId(record.id)
-            const canEnterExisting = existing?.status === 'IN_PROGRESS' || existing?.status === 'PAUSED'
-            const isClosedSession = existing?.status === 'COMPLETED' || existing?.status === 'ABANDONED'
-            const disabled = isClosedSession || (!canEnterExisting && record.status !== 'READY')
-            const text = existing?.status === 'PAUSED' ? '继续' : existing?.status === 'IN_PROGRESS' ? '进入' : '开始'
-            return (
-              <Button
-                type="link"
-                icon={<PlayCircleOutlined />}
-                onClick={() => handleStart(record.id)}
-                disabled={disabled}
-              >
-                {text}
-              </Button>
-            )
-          })()}
+          {renderStartButton(record)}
+          {renderReportButton(record)}
+          {renderReviewButton(record)}
           {record.status === 'GENERATE_FAILED' && (
             <Button type="link" icon={<ReloadOutlined />} onClick={() => handleRegenerate(record.id)}>
               重新生成
             </Button>
           )}
-          <Button type="link" icon={<EditOutlined />} onClick={() => navigate('/interview/config')}>
-            编辑
-          </Button>
+          {isInterviewStarted(record.status) ? (
+            <Tooltip title="面试已开始，不可编辑">
+              <Button type="link" icon={<EditOutlined />} disabled>编辑</Button>
+            </Tooltip>
+          ) : (
+            <Button type="link" icon={<EditOutlined />} onClick={() => navigate('/interview/config')}>
+              编辑
+            </Button>
+          )}
           {record.status === 'READY' && (
             <Popconfirm title="确定归档？" onConfirm={() => handleArchive(record.id)}>
               <Button type="link">归档</Button>
@@ -178,11 +302,11 @@ export default function InterviewIndex() {
       <div className="page-header">
         <div className="header-left">
           <h1>面试记录</h1>
-          <p>管理面试配置和记录</p>
+          <p>管理面试记录，新建面试需先完成配置与出题</p>
         </div>
         <Space>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/interview/config')}>
-            新建配置
+            新建面试
           </Button>
         </Space>
       </div>

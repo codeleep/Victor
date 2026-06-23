@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.codeleep.victor.common.result.Result;
 import me.codeleep.victor.core.dto.AgentRequest;
 import me.codeleep.victor.core.dto.AgentVO;
+import me.codeleep.victor.core.dto.ToolVO;
 import me.codeleep.victor.core.service.AgentService;
 import org.springframework.web.bind.annotation.*;
 
@@ -73,5 +74,14 @@ public class AgentController {
         }
         List<AgentVO> vos = agentService.listByCurrentUser();
         return Result.success(vos);
+    }
+
+    /**
+     * 获取可用工具列表
+     */
+    @GetMapping("/tools")
+    public Result<List<ToolVO>> listAvailableTools() {
+        List<ToolVO> tools = agentService.listAvailableTools();
+        return Result.success(tools);
     }
 }

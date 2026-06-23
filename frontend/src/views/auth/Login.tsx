@@ -66,6 +66,7 @@ export default function Login() {
             还没有账号？<Link to="/register">立即注册</Link>
           </div>
         </Form>
+        <div className="auth-version">v{__APP_VERSION__}</div>
       </div>
     </div>
   )

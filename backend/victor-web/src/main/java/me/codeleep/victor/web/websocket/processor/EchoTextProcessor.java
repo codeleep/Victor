@@ -14,11 +14,11 @@ import reactor.core.publisher.Flux;
 public class EchoTextProcessor implements TextProcessor {
 
     @Override
-    public Flux<String> process(ProcessingContext context, String text) {
+    public Flux<StreamChunk> process(ProcessingContext context, String text) {
         if (text == null || text.isEmpty()) {
             return Flux.empty();
         }
-        return Flux.just(text);
+        return Flux.just(new StreamChunk(text));
     }
 
     @Override

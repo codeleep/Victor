@@ -2,20 +2,24 @@ package me.codeleep.victor.infra.agent.core;
 
 import lombok.Builder;
 import lombok.Data;
-import me.codeleep.victor.infra.agent.guardrail.Guardrail;
-import me.codeleep.victor.infra.agent.handoff.Handoff;
-import me.codeleep.victor.infra.agent.lifecycle.AgentLifecycleListener;
-import me.codeleep.victor.infra.agent.tool.AgentTool;
+import lombok.Singular;
 
 import java.util.List;
 
 /**
  * Agent 定义 - 不可变配置
- * 参考 OpenAI Agents SDK 的 Agent 抽象
+ * 基于 AgentScope ReActAgent 的单 Agent 配置
+ * 工具直接持有 AgentScope 原生工具对象（带 @io.agentscope.core.tool.Tool 注解的实例），
+ * 由上层自行构造实现，Runner 原样注册到 Toolkit
  */
 @Data
 @Builder(toBuilder = true)
 public class AgentDefinition {
+
+    /**
+     * Agent 标识（唯一）
+     */
+    private String key;
 
     /**
      * Agent 名称
@@ -28,65 +32,22 @@ public class AgentDefinition {
     private String instructions;
 
     /**
-     * LLM 协议类型
+     * LLM 配置，Runner 根据 protocol 创建对应 AgentScope ModelWrapper
      */
-    private LlmProtocol llmProtocol;
+    private LlmDefinition llm;
 
     /**
-     * LLM API 地址
+     * 可用工具列表 - AgentScope 原生工具对象
+     * 元素为带 @io.agentscope.core.tool.Tool 注解的实例，上层自行实现
      */
-    private String llmBaseUrl;
+    @Singular
+    private List<Object> tools;
 
     /**
-     * LLM API Key
-     */
-    private String llmApiKey;
-
-    /**
-     * 模型名称
-     */
-    private String modelName;
-
-    /**
-     * 温度参数
+     * 最大 ReAct 迭代轮数
      */
     @Builder.Default
-    private double temperature = 0.7;
-
-    /**
-     * 最大 Token
-     */
-    @Builder.Default
-    private int maxTokens = 4096;
-
-    /**
-     * 可用工具列表
-     */
-    @Builder.Default
-    private List<AgentTool> tools = List.of();
-
-    /**
-     * Handoff 列表（可转移到的其他 Agent）
-     */
-    @Builder.Default
-    private List<Handoff> handoffs = List.of();
-
-    /**
-     * 输入 Guardrail 列表
-     */
-    @Builder.Default
-    private List<Guardrail> inputGuardrails = List.of();
-
-    /**
-     * 输出 Guardrail 列表
-     */
-    @Builder.Default
-    private List<Guardrail> outputGuardrails = List.of();
-
-    /**
-     * 生命周期监听器（Agent 级）
-     */
-    private AgentLifecycleListener lifecycleListener;
+    private int maxIters = 20;
 
     /**
      * 是否启用工具调用
