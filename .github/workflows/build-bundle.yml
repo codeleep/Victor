@@ -1,19 +1,15 @@
 name: Build & Bundle
 
-# 触发条件: 仅指定格式的三段式版本 tag
-#   v1.0.0        -> 构建 + 发布 Release (附带产物)
-#   v1.0.0-dev    -> 仅构建 (产物留在 Actions, 不创建 Release)
+# 触发方式: 在 GitHub 网页创建并发布 Release 时触发
+#   1. 网页 Releases -> Draft a new release
+#   2. 选择 tag (需为三段式版本号 v1.0.0 或 v1.0.0-dev)
+#   3. 发布 Release -> 自动触发本 workflow 构建镜像并打包
+#   4. 构建产物自动上传回该 Release 的 Assets
+#   - v1.0.0     正式版: 构建产物挂到 Release
+#   - v1.0.0-dev 预发布: 产物留在 Actions (不挂 Release)
 on:
-  push:
-    tags:
-      - 'v[0-9]*.[0-9]*.[0-9]*'
-      - 'v[0-9]*.[0-9]*.[0-9]*-dev*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: '三段式版本号 (如 1.0.0 或 1.0.0-dev, 留空则用 0.1.0)'
-        required: false
-        default: '0.1.0'
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -28,33 +24,36 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       is_dev: ${{ steps.ver.outputs.is_dev }}
+      upload_url: ${{ steps.ver.outputs.upload_url }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
       - name: 计算并校验三段式版本号
         id: ver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            v="${{ inputs.version }}"
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            v="${GITHUB_REF_NAME#v}"   # 去掉 v 前缀
-          else
-            v="0.1.0"
-          fi
-          # 校验三段式 x.y.z 或 x.y.z-dev (允许 -dev 及 -dev.N 后缀)
+          # 从 release 事件获取 tag 名
+          TAG="${{ github.event.release.tag_name }}"
+          v="${TAG#v}"   # 去掉 v 前缀
+
+          # 校验三段式 x.y.z 或 x.y.z-dev
           if ! echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-dev(\.[0-9]+)?)?$'; then
-            echo "::error::版本号必须是三段式 x.y.z 或 x.y.z-dev, 当前: $v"
+            echo "::error::版本号必须是三段式 x.y.z 或 x.y.z-dev, 当前 tag: $TAG"
             exit 1
           fi
+
           # dev 尾缀判定
           if echo "$v" | grep -qE -- '-dev'; then
             is_dev="true"
           else
             is_dev="false"
           fi
+
           echo "version=${v}" >> "$GITHUB_OUTPUT"
           echo "is_dev=${is_dev}" >> "$GITHUB_OUTPUT"
+          echo "upload_url=${{ github.event.release.upload_url }}" >> "$GITHUB_OUTPUT"
           echo "本次构建版本: ${v} (dev=${is_dev})"
 
       - name: 安装 QEMU (arm64 跨平台构建)
@@ -115,7 +114,7 @@ jobs:
           if [ "$PLATFORM" = "amd64" ]; then ARCH="x86_64"; else ARCH="arm64"; fi
           (cd bundle && zip -r "victor-${VERSION}-${ARCH}.zip" victor)
 
-      - name: 上传构件
+      - name: 上传构件 (供 release job 汇总)
         uses: actions/upload-artifact@v4
         with:
           name: victor-bundle-${{ matrix.platform }}
@@ -125,8 +124,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    # 仅 tag 触发 且 非 dev 版本 才发布 Release
-    if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.is_dev != 'true'
+    # 仅正式版 (非 dev) 才把产物挂到 Release
+    if: needs.build.outputs.is_dev != 'true'
     steps:
       - name: 下载构件
         uses: actions/download-artifact@v4
@@ -134,20 +133,8 @@ jobs:
           path: bundles
           merge-multiple: true
 
-      - name: 发布 Release (附产物下载)
+      - name: 上传产物到 Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.build.outputs.version }}
           files: bundles/*.zip
-          generate_release_notes: true
-          body: |
-            ## 下载与部署
-
-            根据你的系统架构选择对应压缩包:
-            - `victor-${{ needs.build.outputs.version }}-x86_64.zip` — Windows / Linux (Intel/AMD)
-            - `victor-${{ needs.build.outputs.version }}-arm64.zip` — Mac (Apple Silicon) / ARM 服务器
-
-            解压后编辑 `.env` 修改 `DB_PASSWORD` 与 `JWT_SECRET`, 双击 `deploy.bat` (Windows) 或执行 `sh deploy.sh` (macOS/Linux) 即可启动。
-
-            访问 http://localhost:80 , 默认账号 `admin` / `admin123`。
-
-            详细说明见包内 README.md。
