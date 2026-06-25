@@ -352,7 +352,7 @@ ALTER TABLE interview_config ADD CONSTRAINT fk_interview_config_current_question
 CREATE TABLE interview_turn (
     id BIGSERIAL PRIMARY KEY,
     session_id BIGINT NOT NULL REFERENCES interview_config(id) ON DELETE CASCADE,
-    question_id BIGINT NOT NULL REFERENCES interview_question(id),
+    question_id BIGINT REFERENCES interview_question(id),
     turn_index INTEGER NOT NULL,
     attempt_no INTEGER NOT NULL DEFAULT 1,
     speaker VARCHAR(20) NOT NULL,

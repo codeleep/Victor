@@ -200,7 +200,7 @@ public class InterviewEngineImpl implements InterviewEngine {
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成追问失败: " + result.getErrorMessage());
         }
-        saveTurn(sessionId, null, 1, 1, Speaker.AI, true, result.getContent());
+        saveTurn(sessionId, config.getCurrentQuestionId(), 1, 1, Speaker.AI, true, result.getContent());
         return result.getContent();
     }
 
@@ -226,7 +226,7 @@ public class InterviewEngineImpl implements InterviewEngine {
                     return result.getContent() != null ? result.getContent() : "";
                 })
                 .doOnComplete(() -> {
-                    saveTurn(sessionId, null, 1, 1, Speaker.AI, true, contentBuilder.toString());
+                    saveTurn(sessionId, config.getCurrentQuestionId(), 1, 1, Speaker.AI, true, contentBuilder.toString());
                 });
     }
 
@@ -246,7 +246,7 @@ public class InterviewEngineImpl implements InterviewEngine {
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成提示失败: " + result.getErrorMessage());
         }
-        saveTurn(sessionId, null, 1, 1, Speaker.AI, false, result.getContent());
+        saveTurn(sessionId, config.getCurrentQuestionId(), 1, 1, Speaker.AI, false, result.getContent());
         return result.getContent();
     }
 
@@ -269,7 +269,7 @@ public class InterviewEngineImpl implements InterviewEngine {
                     return result.getContent() != null ? result.getContent() : "";
                 })
                 .doOnComplete(() -> {
-                    saveTurn(sessionId, null, 1, 1, Speaker.AI, false, contentBuilder.toString());
+                    saveTurn(sessionId, config.getCurrentQuestionId(), 1, 1, Speaker.AI, false, contentBuilder.toString());
                 });
     }
 
