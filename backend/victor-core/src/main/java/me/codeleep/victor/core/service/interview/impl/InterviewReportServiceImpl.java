@@ -16,6 +16,7 @@ import me.codeleep.victor.core.service.converter.InterviewReportConverter;
 import me.codeleep.victor.core.service.dto.InterviewReportVO;
 import me.codeleep.victor.core.service.interview.InterviewReportService;
 import me.codeleep.victor.core.service.support.AsyncTaskRegistry;
+import me.codeleep.victor.core.service.export.ReportPdfExporter;
 import org.springframework.stereotype.Service;
 
 /**
@@ -33,6 +34,7 @@ public class InterviewReportServiceImpl implements InterviewReportService {
     private final InterviewReportConverter reportConverter;
     private final ReportEvaluationExecutor reportEvaluationExecutor;
     private final AsyncTaskRegistry asyncTaskRegistry;
+    private final ReportPdfExporter reportPdfExporter;
 
     @Override
     public Long generateReport(Long sessionId) {
@@ -137,7 +139,7 @@ public class InterviewReportServiceImpl implements InterviewReportService {
         if (report == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "报告不存在");
         }
-        return new byte[0];
+        return reportPdfExporter.render(report);
     }
 
     @Override

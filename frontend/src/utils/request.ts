@@ -25,7 +25,9 @@ instance.interceptors.request.use(
 // Response interceptor
 instance.interceptors.response.use(
   (response: AxiosResponse<Result<unknown>>) => {
-    if (response.config.responseType === 'blob') {
+    // 非 JSON 响应(文件下载 blob / 纯文本 text 等)不走统一 Result 拆包,直接放行
+    const responseType = response.config.responseType
+    if (responseType === 'blob' || responseType === 'text' || responseType === 'arraybuffer' || responseType === 'document') {
       return response
     }
     const { data } = response
@@ -61,7 +63,14 @@ instance.interceptors.response.use(
 
 const request = {
   get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    return instance.get(url, config).then((res) => res.data.data as T)
+    return instance.get(url, config).then((res) => {
+      const responseType = config?.responseType
+      // blob/text 等原始响应直接返回 body,不再拆 Result.data
+      if (responseType === 'blob' || responseType === 'text' || responseType === 'arraybuffer' || responseType === 'document') {
+        return res.data as T
+      }
+      return res.data.data as T
+    })
   },
 
   post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
