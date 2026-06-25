@@ -27,6 +27,7 @@
         <tika.version>2.9.2</tika.version>
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <lombok.version>1.18.32</lombok.version>
+        <openhtmltopdf.version>1.0.10</openhtmltopdf.version>
     </properties>
 
     <dependencyManagement>
@@ -87,7 +88,24 @@
                 <version>${mapstruct.version}</version>
             </dependency>
 
-            <!-- 内部模块 -->
+            <!-- OpenHTMLtoPDF: HTML/CSS -> PDF 渲染(报告导出) -->
+        <dependency>
+            <groupId>com.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-core</artifactId>
+            <version>${openhtmltopdf.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-pdfbox</artifactId>
+            <version>${openhtmltopdf.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-slf4j</artifactId>
+            <version>${openhtmltopdf.version}</version>
+        </dependency>
+
+        <!-- 内部模块 -->
             <dependency>
                 <groupId>me.codeleep</groupId>
                 <artifactId>victor-common</artifactId>
