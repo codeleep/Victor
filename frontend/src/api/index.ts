@@ -254,7 +254,7 @@ export const interviewConfigApi = {
     return request.put<void>(`/interview-configs/${id}`, data)
   },
   recallPreview(data: InterviewConfigRequest): Promise<RecallPreviewItem[]> {
-    return request.post<RecallPreviewItem[]>('/interview-configs/recall-preview', data)
+    return request.post<RecallPreviewItem[]>('/interview-configs/recall-preview', data, { timeout: 180000 })
   },
   delete(id: number): Promise<void> {
     return request.delete<void>(`/interview-configs/${id}`)

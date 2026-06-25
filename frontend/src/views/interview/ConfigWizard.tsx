@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Select, Input, InputNumber, Switch, Steps, Tag, Space, Table, Modal, Tabs, App } from 'antd'
+import MarkdownView from '@/components/MarkdownView'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 import { interviewConfigApi, jobApi, resumeApi, agentTeamApi, questionApi, experienceApi } from '@/api'
 import type { JobVO, ResumeVO, AgentTeamVO, InterviewMode, RecallStrategy, QuestionVO, ExperienceVO, InterviewConfigRequest, RecallPreviewItem } from '@/types'
@@ -56,8 +57,8 @@ export default function ConfigWizard() {
     questionTeamId: undefined as number | undefined,
     interviewTeamId: undefined as number | undefined,
     evaluationTeamId: undefined as number | undefined,
-    recallStrategy: 'HYBRID' as RecallStrategy,
-    maxRecallCount: 20,
+    recallStrategy: 'AI' as RecallStrategy,
+    maxRecallCount: 50,
   })
 
   useEffect(() => {
@@ -489,6 +490,7 @@ export default function ConfigWizard() {
                       { label: '向量检索', value: 'VECTOR' },
                       { label: '关键词检索', value: 'KEYWORD' },
                       { label: '混合检索', value: 'HYBRID' },
+                      { label: 'AI智能召回', value: 'AI' },
                     ]}
                   />
                 </div>
@@ -694,7 +696,7 @@ export default function ConfigWizard() {
         open={!!detailItem}
         onCancel={() => setDetailItem(null)}
         footer={<Button onClick={() => setDetailItem(null)}>关闭</Button>}
-        width={640}
+        width="60%"
       >
         {detailItem && (() => {
           if (detailItem.type === 'QUESTION') {
@@ -706,8 +708,8 @@ export default function ConfigWizard() {
                 <p><strong>类型：</strong>{({ TECHNICAL: '技术', BEHAVIORAL: '行为', SHORT_ANSWER: '简答', MULTIPLE_CHOICE: '选择', CODING: '编程' } as Record<string, string>)[q.type] || q.type}</p>
                 <p><strong>难度：</strong>{({ EASY: '简单', MEDIUM: '中等', HARD: '困难' } as Record<string, string>)[q.difficulty] || q.difficulty}</p>
                 <p><strong>标签：</strong>{q.tags?.map(t => <Tag key={t}>{t}</Tag>) || '-'}</p>
-                {q.description && <p><strong>描述：</strong>{q.description}</p>}
-                {q.referenceAnswer && <p><strong>参考答案：</strong>{q.referenceAnswer}</p>}
+                {q.description && (<div><strong>描述：</strong><MarkdownView source={q.description} /></div>)}
+                {q.referenceAnswer && (<div><strong>参考答案：</strong><MarkdownView source={q.referenceAnswer} /></div>)}
               </div>
             )
           } else {
@@ -719,7 +721,7 @@ export default function ConfigWizard() {
                 <p><strong>类型：</strong>{({ PROJECT: '项目', WORK: '工作', EDUCATION: '教育', OTHER: '其他' } as Record<string, string>)[e.type] || e.type}</p>
                 <p><strong>时间：</strong>{e.startDate ? `${e.startDate} ~ ${e.endDate || '至今'}` : '-'}</p>
                 <p><strong>技能：</strong>{e.skills?.map(s => <Tag key={s}>{s}</Tag>) || '-'}</p>
-                {e.description && <p><strong>描述：</strong>{e.description}</p>}
+                {e.description && (<div><strong>描述：</strong><MarkdownView source={e.description} /></div>)}
               </div>
             )
           }

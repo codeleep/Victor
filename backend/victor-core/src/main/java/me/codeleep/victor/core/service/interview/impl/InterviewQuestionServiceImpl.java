@@ -61,6 +61,7 @@ public class InterviewQuestionServiceImpl implements InterviewQuestionService {
     private final AgentTeamMapper agentTeamMapper;
     private final InterviewConfigConverter configConverter;
     private final QuestionGenerationExecutor questionGenerationService;
+    private final AiRecallService aiRecallService;
 
     @Override
     @Transactional
@@ -165,6 +166,28 @@ public class InterviewQuestionServiceImpl implements InterviewQuestionService {
 
     @Override
     public List<Map<String, Object>> previewRecallItems(InterviewConfigRequest request) {
+        if (request.getRecallStrategy() == RecallStrategy.AI) {
+            return previewAiRecallItems(request);
+        }
+        return keywordRecallItems(request);
+    }
+
+    /**
+     * AI 多轮召回: 由 LLM 根据 JD/简历提取关键词并迭代检索题库/经历库。
+     * LLM 不可用时会抛出 BusinessException, 由全局异常处理转为错误响应,
+     * 不静默回退到关键词召回, 避免用户误以为 AI 召回已生效。
+     */
+    private List<Map<String, Object>> previewAiRecallItems(InterviewConfigRequest request) {
+        Long userId = UserContext.getUserId();
+        int limit = normalizeRecallLimit(request.getMaxRecallCount());
+        Job job = request.getJobId() != null ? jobMapper.selectById(request.getJobId()) : null;
+        Resume resume = request.getResumeId() != null ? resumeMapper.selectById(request.getResumeId()) : null;
+        log.info("AI multi-round recall start: userId={}, jobId={}, resumeId={}, limit={}",
+                userId, request.getJobId(), request.getResumeId(), limit);
+        return aiRecallService.recall(userId, job, resume, limit);
+    }
+
+    private List<Map<String, Object>> keywordRecallItems(InterviewConfigRequest request) {
         Long userId = UserContext.getUserId();
         int limit = normalizeRecallLimit(request.getMaxRecallCount());
         Set<String> keywords = buildRecallKeywords(request);
