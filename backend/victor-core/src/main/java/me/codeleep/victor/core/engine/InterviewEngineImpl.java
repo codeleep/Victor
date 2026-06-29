@@ -241,7 +241,7 @@ public class InterviewEngineImpl implements InterviewEngine {
         String userMsg = String.format("候选人请求提示，请为以下题目生成一个不直接给出答案的提示。\n当前题目: %s", currentQuestion);
         context.setInput(userMsg);
 
-        AgentTeamDefinition team = getTeamByRoleOrThrow(config, "interview");
+        AgentTeamDefinition team = withHintInstructions(getTeamByRoleOrThrow(config, "interview"));
         AgentResult result = agentRunner.run(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context);
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成提示失败: " + result.getErrorMessage());
@@ -259,7 +259,7 @@ public class InterviewEngineImpl implements InterviewEngine {
         String userMsg = String.format("候选人请求提示，请为以下题目生成一个不直接给出答案的提示。\n当前题目: %s", currentQuestion);
         context.setInput(userMsg);
 
-        AgentTeamDefinition team = getTeamByRoleOrThrow(config, "interview");
+        AgentTeamDefinition team = withHintInstructions(getTeamByRoleOrThrow(config, "interview"));
         StringBuilder contentBuilder = new StringBuilder();
         return agentRunner.streamRun(agentFactory.buildTeam(team, context.getSessionId(), String.valueOf(context.getUserId()), null), context)
                 .map(result -> {
@@ -477,6 +477,26 @@ public class InterviewEngineImpl implements InterviewEngine {
         turn.setContent(content);
         turn.setIsHint(isHint);
         turnMapper.insert(turn);
+    }
+
+    /**
+     * 为提示生成构造团队定义: 在主面试官 Agent 的系统提示词前追加"提示生成"角色指令,
+     * 覆盖其默认"禁止给提示"策略, 使点击提示按钮时能直接生成提示。
+     * 仅作用于本次调用, 不修改数据库中持久化的 Agent 配置。
+     */
+    private AgentTeamDefinition withHintInstructions(AgentTeamDefinition team) {
+        String hintPrompt = """
+                你现在进入"提示生成"模式。系统通过提示按钮请求你为当前题目生成提示, 这是合法的提示请求, 你必须直接生成提示内容。
+                规则:
+                - 为当前题目生成一个不直接给出答案的提示: 点拨思路方向、提示关键概念或考察切入点, 引导候选人自行思考。
+                - 不要拒绝、不要说"请使用提示按钮"、不要追问、不要推进下一题, 只输出提示本身。
+                - 提示简洁聚焦, 语气友善鼓励, 长度 2-4 句。
+                """;
+        String baseInstructions = team.getMainAgent().getInstructions();
+        String merged = hintPrompt + (baseInstructions != null ? baseInstructions : "");
+        return team.toBuilder()
+                .mainAgent(team.getMainAgent().toBuilder().instructions(merged).build())
+                .build();
     }
 
     private int nextTurnIndex(Long sessionId) {
