@@ -112,7 +112,7 @@ public class InterviewEngineImpl implements InterviewEngine {
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成题目失败: " + result.getErrorMessage());
         }
-        saveTurn(sessionId, null, 1, 1, Speaker.AI, false, result.getContent());
+        saveTurn(sessionId, null, Speaker.AI, false, result.getContent());
         return result.getContent();
     }
 
@@ -138,7 +138,7 @@ public class InterviewEngineImpl implements InterviewEngine {
                     return result.getContent() != null ? result.getContent() : "";
                 })
                 .doOnComplete(() -> {
-                    saveTurn(sessionId, null, 1, 1, Speaker.AI, false, contentBuilder.toString());
+                    saveTurn(sessionId, null, Speaker.AI, false, contentBuilder.toString());
                 });
     }
 
@@ -200,7 +200,7 @@ public class InterviewEngineImpl implements InterviewEngine {
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成追问失败: " + result.getErrorMessage());
         }
-        saveTurn(sessionId, config.getCurrentQuestionId(), 1, 1, Speaker.AI, true, result.getContent());
+        saveTurn(sessionId, config.getCurrentQuestionId(), Speaker.AI, true, result.getContent());
         return result.getContent();
     }
 
@@ -226,7 +226,7 @@ public class InterviewEngineImpl implements InterviewEngine {
                     return result.getContent() != null ? result.getContent() : "";
                 })
                 .doOnComplete(() -> {
-                    saveTurn(sessionId, config.getCurrentQuestionId(), 1, 1, Speaker.AI, true, contentBuilder.toString());
+                    saveTurn(sessionId, config.getCurrentQuestionId(), Speaker.AI, true, contentBuilder.toString());
                 });
     }
 
@@ -246,7 +246,7 @@ public class InterviewEngineImpl implements InterviewEngine {
         if (!result.isSuccess()) {
             throw new BusinessException(ResultCode.INTERNAL_SERVER_ERROR, "生成提示失败: " + result.getErrorMessage());
         }
-        saveTurn(sessionId, config.getCurrentQuestionId(), 1, 1, Speaker.AI, false, result.getContent());
+        saveTurn(sessionId, config.getCurrentQuestionId(), Speaker.AI, false, result.getContent());
         return result.getContent();
     }
 
@@ -269,7 +269,7 @@ public class InterviewEngineImpl implements InterviewEngine {
                     return result.getContent() != null ? result.getContent() : "";
                 })
                 .doOnComplete(() -> {
-                    saveTurn(sessionId, config.getCurrentQuestionId(), 1, 1, Speaker.AI, false, contentBuilder.toString());
+                    saveTurn(sessionId, config.getCurrentQuestionId(), Speaker.AI, false, contentBuilder.toString());
                 });
     }
 
@@ -466,18 +466,27 @@ public class InterviewEngineImpl implements InterviewEngine {
         return lastQuestion != null ? lastQuestion.getContent() : "";
     }
 
-    private void saveTurn(Long sessionId, Long questionId, Integer turnIndex, Integer attemptNo,
+    private void saveTurn(Long sessionId, Long questionId,
                           Speaker speaker, Boolean isFollowup, String content) {
         InterviewTurn turn = new InterviewTurn();
         turn.setSessionId(sessionId);
         turn.setQuestionId(questionId);
-        turn.setTurnIndex(turnIndex);
-        turn.setAttemptNo(attemptNo);
+        turn.setTurnIndex(nextTurnIndex(sessionId));
         turn.setSpeaker(speaker);
         turn.setIsFollowup(isFollowup);
         turn.setContent(content);
         turn.setIsHint(false);
         turnMapper.insert(turn);
+    }
+
+    private int nextTurnIndex(Long sessionId) {
+        InterviewTurn last = turnMapper.selectOne(
+                new LambdaQueryWrapper<InterviewTurn>()
+                        .eq(InterviewTurn::getSessionId, sessionId)
+                        .orderByDesc(InterviewTurn::getTurnIndex)
+                        .last("LIMIT 1")
+        );
+        return last != null && last.getTurnIndex() != null ? last.getTurnIndex() + 1 : 1;
     }
 
     private List<GeneratedQuestion> parseGeneratedQuestions(String content) {
