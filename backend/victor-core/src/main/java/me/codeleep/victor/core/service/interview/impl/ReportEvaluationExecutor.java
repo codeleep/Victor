@@ -15,6 +15,7 @@ import me.codeleep.victor.core.entity.*;
 import me.codeleep.victor.core.mapper.*;
 import me.codeleep.victor.infra.agent.StructuredJsonParser;
 import me.codeleep.victor.infra.agent.core.AgentContext;
+import me.codeleep.victor.infra.agent.core.AgentDefinition;
 import me.codeleep.victor.infra.agent.core.AgentResult;
 import me.codeleep.victor.infra.agent.core.AgentTeamDefinition;
 import me.codeleep.victor.infra.agent.runner.AgentFactory;
@@ -167,11 +168,29 @@ public class ReportEvaluationExecutor {
 
     /** 构建评估团队并同步执行，返回评估结果。 */
     private AgentResult runEvaluationTeam(InterviewConfig config, AgentContext context) {
-        AgentTeamDefinition team = getTeamOrThrow(config);
+        AgentTeamDefinition team = withJsonInstructions(getTeamOrThrow(config));
         return agentRunner.run(
                 agentFactory.buildTeam(team, context.getSessionId(),
                         String.valueOf(context.getUserId()), null),
                 context);
+    }
+
+    /**
+     * 强制评估主 Agent 输出 JSON: 在主 Agent 系统提示词前追加严格 JSON 输出指令,
+     * 覆盖其可能输出 Markdown 报告的默认行为(含历史/自定义提示词)。
+     * 仅作用于本次调用, 不修改数据库中持久化的 Agent 配置。
+     */
+    private AgentTeamDefinition withJsonInstructions(AgentTeamDefinition team) {
+        String jsonInstruction = """
+                你的最终输出必须且只能是一个 JSON 对象, 禁止输出 Markdown、表格、标题或任何解释性文字。
+                JSON 结构: {"overallScore": 数字0-100, "dimensionScores": {"语言组织": 数字, "答案质量": 数字, "语气气势": 数字, "节奏把控": 数字}, "strengths": "字符串", "weaknesses": "字符串", "suggestions": "字符串", "summary": "字符串"}
+                直接以 { 开头、} 结尾, 不要包裹在代码块中, 不要有任何前后缀文字。
+                """;
+        String baseInstructions = team.getMainAgent().getInstructions();
+        String merged = jsonInstruction + (baseInstructions != null ? baseInstructions : "");
+        return team.toBuilder()
+                .mainAgent(team.getMainAgent().toBuilder().instructions(merged).build())
+                .build();
     }
 
     /** 解析评估团队原始输出并填充报告字段；解析失败则标记失败而非静默落默认值。 */
