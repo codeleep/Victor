@@ -38,7 +38,7 @@ export type SessionStatus = 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'REPORT_GEN
 
 export type InterviewReportStatus = 'PENDING' | 'EVALUATING' | 'COMPLETED' | 'FAILED'
 
-export type RecallStrategy = 'VECTOR' | 'KEYWORD' | 'HYBRID'
+export type RecallStrategy = 'VECTOR' | 'KEYWORD' | 'HYBRID' | 'AI'
 
 export type LlmProtocol = 'OPENAI' | 'CLAUDE' | 'QWEN' | 'VOLCENGINE'
 
