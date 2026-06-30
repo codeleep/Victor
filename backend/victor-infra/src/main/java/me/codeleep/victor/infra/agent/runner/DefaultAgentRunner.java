@@ -39,6 +39,28 @@ public class DefaultAgentRunner implements AgentRunner {
 
             Msg result = agent.call(input, rc).block();
 
+            // [DIAG] 诊断最终消息内容，定位 getTextContent 返回空的问题
+            if (result == null) {
+                log.warn("[DIAG] Agent 最终消息为 null: agentKey={}", context.getMetadata() != null ? context.getMetadata().get("agentKey") : null);
+            } else {
+                String textContent = result.getTextContent();
+                log.info("[DIAG] Agent 返回: role={}, textLen={}, blocks={}, agentKey={}",
+                        result.getRole(),
+                        textContent != null ? textContent.length() : -1,
+                        result.getContentBlocks(io.agentscope.core.message.ContentBlock.class) != null ? result.getContentBlocks(io.agentscope.core.message.ContentBlock.class).size() : -1,
+                        context.getMetadata() != null ? context.getMetadata().get("agentKey") : null);
+                if (textContent == null || textContent.isEmpty()) {
+                    log.warn("[DIAG] Agent 文本内容为空，开始打印所有内容块类型: agentKey={}",
+                            context.getMetadata() != null ? context.getMetadata().get("agentKey") : null);
+                    if (result.getContentBlocks(io.agentscope.core.message.ContentBlock.class) != null) {
+                        for (int i = 0; i < result.getContentBlocks(io.agentscope.core.message.ContentBlock.class).size(); i++) {
+                            var b = result.getContentBlocks(io.agentscope.core.message.ContentBlock.class).get(i);
+                            log.warn("[DIAG]   block[{}] type={}, class={}", i, b.getClass().getSimpleName(), b);
+                        }
+                    }
+                }
+            }
+
             AgentResult r = AgentResult.answer(result != null ? result.getTextContent() : null);
             r.setSourceAgentKey(context.getMetadata() != null
                     ? (String) context.getMetadata().getOrDefault("agentKey", null) : null);
