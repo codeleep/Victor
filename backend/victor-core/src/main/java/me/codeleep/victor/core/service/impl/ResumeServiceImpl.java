@@ -10,13 +10,18 @@ import me.codeleep.victor.common.exception.BusinessException;
 import me.codeleep.victor.common.result.ResultCode;
 import me.codeleep.victor.common.context.UserContext;
 import me.codeleep.victor.core.dto.ResumeVO;
-import me.codeleep.victor.core.entity.AgentLlmConfig;
 import me.codeleep.victor.core.entity.Resume;
-import me.codeleep.victor.infra.agent.core.LlmDefinition;
-import me.codeleep.victor.infra.agent.llm.ModelWrapperFactory;
-import me.codeleep.victor.core.mapper.AgentLlmConfigMapper;
 import me.codeleep.victor.core.mapper.ResumeMapper;
 import me.codeleep.victor.core.service.ResumeService;
+import me.codeleep.victor.core.engine.AgentDefinitionFactory;
+import me.codeleep.victor.core.entity.Agent;
+import me.codeleep.victor.core.service.AgentService;
+import me.codeleep.victor.infra.agent.core.AgentContext;
+import me.codeleep.victor.infra.agent.core.AgentDefinition;
+import me.codeleep.victor.infra.agent.core.AgentResult;
+import me.codeleep.victor.infra.agent.runner.AgentFactory;
+import me.codeleep.victor.infra.agent.runner.AgentRunner;
+import io.agentscope.core.ReActAgent;
 import me.codeleep.victor.core.service.converter.ResumeConverter;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
@@ -50,11 +55,16 @@ public class ResumeServiceImpl implements ResumeService {
 
     private final ResumeMapper resumeMapper;
     private final ResumeConverter resumeConverter;
-    private final ModelWrapperFactory modelWrapperFactory;
-    private final AgentLlmConfigMapper agentLlmConfigMapper;
+    private final AgentService agentService;
+    private final AgentDefinitionFactory agentDefinitionFactory;
+    private final AgentFactory agentFactory;
+    private final AgentRunner agentRunner;
 
     @Value("${file.upload.path:${user.home}/victor/uploads}")
     private String uploadBasePath;
+
+    /** 简历解析 Agent 的 key（与 UtilityModuleInitializer 中注册一致） */
+    private static final String KEY_RESUME_PARSER = "resume-parser";
 
     @Override
     @Transactional
@@ -108,37 +118,26 @@ public class ResumeServiceImpl implements ResumeService {
         String extractedText = extractResult.text();
         Map<String, String> tikaMetadata = extractResult.metadata();
 
-        // 2. 获取系统默认 LLM 配置
-        AgentLlmConfig llmConfig = agentLlmConfigMapper.selectOne(
-                new LambdaQueryWrapper<AgentLlmConfig>()
-                        .eq(AgentLlmConfig::getIsDefault, true)
-                        .eq(AgentLlmConfig::getIsEnabled, true)
-        );
-        if (llmConfig == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "未配置默认LLM，无法解析简历");
+        // 2. 通过 resume-parser Agent 将简历原文转换为结构化 Markdown（systemPrompt 来自 prompts/resume-parser.md，忠实保真不删减）
+        Agent resumeParserAgent = agentService.getByKey(KEY_RESUME_PARSER);
+        AgentDefinition agentDef = agentDefinitionFactory.build(resumeParserAgent);
+        if (agentDef == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "简历解析Agent配置异常，无法解析简历");
         }
+        ReActAgent agent = agentFactory.buildAgent(agentDef, null, String.valueOf(UserContext.getUserId()), null);
+        AgentContext context = new AgentContext(null, UserContext.getUserId(), extractedText);
+        context.setVariable("resumeFileName", resume.getFileName());
+        context.getMetadata().put("agentKey", KEY_RESUME_PARSER);
 
-        // 3. 调用 LLM 将简历内容转换为结构化 Markdown（忠实保真，不删减信息）
-        String apiKey = llmConfig.getAuthParams() != null ? (String) llmConfig.getAuthParams().getOrDefault("apiKey", "") : "";
-        LlmDefinition llm = LlmDefinition.builder()
-                .protocol(llmConfig.getProtocol())
-                .baseUrl(llmConfig.getApiEndpoint())
-                .apiKey(apiKey)
-                .modelName(llmConfig.getModelName())
-                .temperature(llmConfig.getTemperature() != null ? llmConfig.getTemperature().doubleValue() : 0.2)
-                .maxTokens(llmConfig.getMaxTokens() != null ? llmConfig.getMaxTokens() : 8192)
-                .build();
-        String prompt = "你是简历解析专家。请把下面的简历原文转换为结构化 Markdown，必须做到信息零丢失。\n" +
-                "严格要求：\n" +
-                "1. 忠实保真：原文出现的每一条信息（个人信息、教育、工作、项目、技能、证书、自我评价等）都必须保留，不得省略、概括、合并或改写语义。\n" +
-                "2. 逐条还原：宁可冗余也不要删减；时间、公司/学校、职位/专业、技术栈、量化数据、职责描述等逐项照录。\n" +
-                "3. 仅做整理：可调整排版与标题层级（# ## ###）、使用列表/表格增强可读性，但不得因“去噪”而删除任何原文内容。\n" +
-                "4. 不得新增原文没有的信息，也不得臆测补全。\n\n" +
-                "简历原文：\n" + extractedText;
+        AgentResult agentResult = agentRunner.run(agent, context);
+        if (!agentResult.isSuccess() || agentResult.getContent() == null) {
+            log.error("简历解析Agent执行失败: resumeId={}, error={}", resumeId, agentResult.getErrorMessage());
+            throw new BusinessException(ResultCode.RESUME_PARSE_FAILED,
+                    agentResult.getErrorMessage() != null ? agentResult.getErrorMessage() : "简历解析Agent未返回有效内容");
+        }
+        String markdown = agentResult.getContent();
 
-        String markdown = modelWrapperFactory.generate(llm, prompt);
-
-        // 4. 存储：rawText 为 LLM 整理后的可读 Markdown；Tika 提取的原始文本与文件元数据存入 parsedContent 作为底稿，确保不丢信息
+        // 3. 存储：rawText 为 Agent 整理后的可读 Markdown；Tika 提取的原始文本与文件元数据存入 parsedContent 作为底稿，确保不丢信息
         resume.setRawText(markdown);
         Map<String, Object> parsedContent = new HashMap<>();
         parsedContent.put("rawExtractedText", extractedText);
