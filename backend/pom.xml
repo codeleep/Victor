@@ -25,6 +25,8 @@
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
         <jjwt.version>0.12.5</jjwt.version>
         <tika.version>2.9.2</tika.version>
+        <commons-io.version>2.16.1</commons-io.version>
+        <pdfbox.version>2.0.31</pdfbox.version>
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <lombok.version>1.18.32</lombok.version>
         <openhtmltopdf.version>1.0.10</openhtmltopdf.version>
@@ -74,6 +76,20 @@
                 <groupId>org.apache.tika</groupId>
                 <artifactId>tika-parsers-standard-package</artifactId>
                 <version>${tika.version}</version>
+            </dependency>
+
+            <!-- commons-io: tika-core 2.9.2 声明 2.15.1 但运行时引用 2.16+ 的 ChecksumInputStream，强制对齐 -->
+            <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>${commons-io.version}</version>
+            </dependency>
+
+            <!-- pdfbox: tika-parser-pdf-module 2.9.2 声明 2.0.31(canPrintFaithful 自 2.0.27 起)，被 openhtmltopdf 1.0.10 拉低到 2.0.24 导致 NoSuchMethodError，强制对齐 2.0.31 -->
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>pdfbox</artifactId>
+                <version>${pdfbox.version}</version>
             </dependency>
 
             <!-- MapStruct -->
