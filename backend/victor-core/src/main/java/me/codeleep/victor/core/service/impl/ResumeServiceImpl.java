@@ -33,6 +33,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -102,8 +103,10 @@ public class ResumeServiceImpl implements ResumeService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权操作此简历");
         }
 
-        // 1. 使用 Tika 从文件提取原始文本
-        String extractedText = extractTextWithTika(resume.getFilePath());
+        // 1. 使用 Tika 从文件提取原始文本与文件元数据（保留全部信息，作为不丢失的底稿）
+        TikaExtractResult extractResult = extractTextWithTika(resume.getFilePath());
+        String extractedText = extractResult.text();
+        Map<String, String> tikaMetadata = extractResult.metadata();
 
         // 2. 获取系统默认 LLM 配置
         AgentLlmConfig llmConfig = agentLlmConfigMapper.selectOne(
@@ -115,39 +118,52 @@ public class ResumeServiceImpl implements ResumeService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "未配置默认LLM，无法解析简历");
         }
 
-        // 3. 调用 LLM 将简历内容转换为结构化 Markdown
+        // 3. 调用 LLM 将简历内容转换为结构化 Markdown（忠实保真，不删减信息）
         String apiKey = llmConfig.getAuthParams() != null ? (String) llmConfig.getAuthParams().getOrDefault("apiKey", "") : "";
         LlmDefinition llm = LlmDefinition.builder()
                 .protocol(llmConfig.getProtocol())
                 .baseUrl(llmConfig.getApiEndpoint())
                 .apiKey(apiKey)
                 .modelName(llmConfig.getModelName())
-                .temperature(llmConfig.getTemperature() != null ? llmConfig.getTemperature().doubleValue() : 0.7)
-                .maxTokens(llmConfig.getMaxTokens() != null ? llmConfig.getMaxTokens() : 4096)
+                .temperature(llmConfig.getTemperature() != null ? llmConfig.getTemperature().doubleValue() : 0.2)
+                .maxTokens(llmConfig.getMaxTokens() != null ? llmConfig.getMaxTokens() : 8192)
                 .build();
-        String prompt = "你是一个简历解析专家。请将以下简历内容转换为结构化的 Markdown 格式。\n" +
-                "要求：\n" +
-                "1. 使用清晰的标题层级（# ## ###）\n" +
-                "2. 保留所有关键信息：个人信息、教育经历、工作经历、项目经历、技能等\n" +
-                "3. 使用列表、表格等 Markdown 元素增强可读性\n" +
-                "4. 去除无关的格式噪音，只保留有意义的内容\n\n" +
-                "简历内容：\n" + extractedText;
+        String prompt = "你是简历解析专家。请把下面的简历原文转换为结构化 Markdown，必须做到信息零丢失。\n" +
+                "严格要求：\n" +
+                "1. 忠实保真：原文出现的每一条信息（个人信息、教育、工作、项目、技能、证书、自我评价等）都必须保留，不得省略、概括、合并或改写语义。\n" +
+                "2. 逐条还原：宁可冗余也不要删减；时间、公司/学校、职位/专业、技术栈、量化数据、职责描述等逐项照录。\n" +
+                "3. 仅做整理：可调整排版与标题层级（# ## ###）、使用列表/表格增强可读性，但不得因“去噪”而删除任何原文内容。\n" +
+                "4. 不得新增原文没有的信息，也不得臆测补全。\n\n" +
+                "简历原文：\n" + extractedText;
 
         String markdown = modelWrapperFactory.generate(llm, prompt);
 
-        // 4. 存储结构化 Markdown 到 rawText
+        // 4. 存储：rawText 为 LLM 整理后的可读 Markdown；Tika 提取的原始文本与文件元数据存入 parsedContent 作为底稿，确保不丢信息
         resume.setRawText(markdown);
-        resume.setParsedContent(null);
+        Map<String, Object> parsedContent = new HashMap<>();
+        parsedContent.put("rawExtractedText", extractedText);
+        parsedContent.put("rawCharCount", extractedText.length());
+        parsedContent.put("sourceFileName", resume.getFileName());
+        if (tikaMetadata != null) {
+            parsedContent.put("fileMetadata", tikaMetadata);
+        }
+        resume.setParsedContent(parsedContent);
         resume.setSummary(null);
         resume.setStatus(ResumeStatus.PARSED);
         resumeMapper.updateById(resume);
-        log.info("简历解析完成: resumeId={}", resumeId);
+        log.info("简历解析完成: resumeId={}, 原始文本字符数={}, Markdown字符数={}",
+                resumeId, extractedText.length(), markdown != null ? markdown.length() : 0);
     }
 
+    /** Tika 提取结果：原始文本 + 文件元数据，确保信息不丢失 */
+    private record TikaExtractResult(String text, Map<String, String> metadata) {}
+
     /**
-     * 使用 Apache Tika 从文件提取文本内容
+     * 使用 Apache Tika 从文件提取文本内容与元数据。
+     * <p>BodyContentHandler(-1) 不限制长度，保留全部正文；同时收集 content-type、页数等元数据，
+     * 作为不可丢失的底稿，避免后续 LLM 重写时漏抄信息后无法回溯。</p>
      */
-    private String extractTextWithTika(String filePath) {
+    private TikaExtractResult extractTextWithTika(String filePath) {
         Path path = Paths.get(filePath);
         if (!Files.exists(path)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "简历文件不存在");
@@ -160,7 +176,11 @@ public class ResumeServiceImpl implements ResumeService {
             try (InputStream stream = Files.newInputStream(path)) {
                 parser.parse(stream, handler, metadata, context);
             }
-            return handler.toString();
+            Map<String, String> metaMap = new LinkedHashMap<>();
+            for (String name : metadata.names()) {
+                metaMap.put(name, metadata.get(name));
+            }
+            return new TikaExtractResult(handler.toString(), metaMap);
         } catch (Exception e) {
             log.error("Tika 提取文本失败: {}", filePath, e);
             throw new BusinessException(ResultCode.BAD_REQUEST, "简历文件解析失败");
