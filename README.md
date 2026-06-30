@@ -105,7 +105,7 @@ Victor/
 │       ├── stores/              # Zustand 状态管理
 │       ├── utils/               # 请求、音频、WebSocket 等工具
 │       └── types/               # TypeScript 类型定义
-├── docker/                      # 容器化: app/应用镜像  db/数据库镜像  离线分发脚本与编排
+├── docker/                      # 容器化: base/基础镜像  db/数据库镜像  离线分发脚本与编排
 ├── docs/                        # 项目文档与系统截图
 └── docker-compose.yml           # 一键启动配置
 ```
@@ -120,10 +120,16 @@ Victor/
 - Docker 与 Docker Compose
 - PostgreSQL 16 / pgvector（本地开发可使用 Docker Compose 提供的数据库）
 
-### Docker 一键启动
+### Docker 全栈启动
+
+正式部署使用 GitHub Release 产出的离线分发包, 详见 `docker/DEPLOY.md`
+(基础镜像 + 挂载 app 架构, 业务发版只更新 app 目录, 依赖变化才重建基础镜像)。
+
+本地全栈验证 (构建基础镜像 + 打包 app + 启动):
 
 ```bash
-docker compose up -d
+bash docker/base/package-app.sh dev dev docker   # 产物输出到 docker/app (requiresBase=dev)
+docker compose up -d --build                      # 构建 victor-base:dev + victor-db:dev 并挂载 docker/app
 ```
 
 默认访问地址：`http://localhost`
@@ -139,7 +145,7 @@ curl -X POST http://localhost/api/v1/system/init
 启动数据库：
 
 ```bash
-docker compose up postgres -d
+docker compose up victor-postgres -d --build
 ```
 
 启动后端：

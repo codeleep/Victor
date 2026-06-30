@@ -1,7 +1,18 @@
 .git
 .idea
 docs
+logs
+.run-logs
+.edge-profile
 *.md
 docker-compose.yml
 frontend/node_modules
+frontend/dist
 backend/.idea
+backend/target
+
+# Build / packaging output
+build
+.build-stage
+base-build.log
+_lf.py

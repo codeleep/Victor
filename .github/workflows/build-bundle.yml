@@ -1,141 +1,259 @@
 name: Build & Bundle
 
-# 触发方式: 在 GitHub 网页创建并发布 Release 时触发
-#   1. 网页 Releases -> Draft a new release
-#   2. 选择 tag (需为三段式版本号 v1.0.0 或 v1.0.0-dev)
-#   3. 发布 Release -> 自动触发本 workflow 构建镜像并打包
-#   4. 构建产物自动上传回该 Release 的 Assets
-#   - v1.0.0     正式版: 构建产物挂到 Release
-#   - v1.0.0-dev 预发布: 产物留在 Actions (不挂 Release)
+# 触发: 在 GitHub 发布 Release (tag 为三段式 vX.Y.Z 或 vX.Y.Z-dev) 时
+#   - v1.0.0     正式版: 产物挂到 Release
+#   - v1.0.0-dev 预发布: 产物留在 Actions
+#
+# 流程:
+#   build-app      构建 lib(第三方依赖) -> 与基准清单 diff -> 决定是否重建 base
+#                  构建 app 包(前端 dist + modules + manifest) 并上传
+#                  依赖变化时最后更新 docker/base/base-manifest.json 并提交回 main
+#   build-images   按架构(amd64/arm64) 构建 victor-base(仅依赖变化时) + victor-db
+#   assemble       组装离线分发包(每架构一个 zip)
+#   release        正式版产物挂到 Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      verify_version:
+        description: '验收用版本号 (仅 workflow_dispatch 生效, 默认 0.0.0-verify)'
+        required: false
+        default: '0.0.1-dev'
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  build-app:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      is_dev: ${{ steps.ver.outputs.is_dev }}
+      changed: ${{ steps.diff.outputs.changed }}
+      new_base_version: ${{ steps.resolve.outputs.new_base_version }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 计算并校验三段式版本号
+        id: ver
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            # workflow_dispatch 手动触发: 用输入版本号, 跳过 tag 校验
+            v="${{ github.event.inputs.verify_version }}"
+            if [ -z "$v" ]; then v="0.0.1-dev"; fi
+          else
+            v="${TAG#v}"
+          fi
+          if ! echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-dev(\.[0-9]+)?)?$'; then
+            echo "::error::版本号必须是三段式 x.y.z 或 x.y.z-dev, 当前 tag: $TAG"
+            exit 1
+          fi
+          if echo "$v" | grep -qE -- '-dev'; then is_dev=true; else is_dev=false; fi
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
+          echo "is_dev=${is_dev}" >> "$GITHUB_OUTPUT"
+          echo "本次构建版本: ${v} (dev=${is_dev})"
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 安装 Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 提取第三方 lib (用于依赖 diff)
+        run: |
+          mkdir -p build/lib
+          (cd backend && mvn -pl victor-web -am clean install -DskipTests -B -q)
+          (cd backend && mvn -pl victor-web dependency:copy-dependencies \
+            -DincludeScope=runtime -DexcludeGroupIds=me.codeleep \
+            -DoutputDirectory="$GITHUB_WORKSPACE/build/lib" -B -q)
+
+      - name: 与基准清单比对依赖
+        id: diff
+        run: |
+          python3 docker/base/manifest.py diff docker/base/base-manifest.json build/lib > /tmp/diff.json
+          cat /tmp/diff.json
+          changed=$(python3 -c "import json;print(json.load(open('/tmp/diff.json'))['changed'])")
+          base_ver=$(python3 -c "import json;print(json.load(open('/tmp/diff.json'))['baselineVersion'])")
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+          echo "baseline_version=${base_ver}" >> "$GITHUB_OUTPUT"
+
+      - name: 解析 newBaseVersion (变化则用 app 版本, 否则复用基准)
+        id: resolve
+        run: |
+          if [ "${{ steps.diff.outputs.changed }}" = "True" ]; then
+            echo "new_base_version=${{ steps.ver.outputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_base_version=${{ steps.diff.outputs.baseline_version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 构建 app 包 (前端 + modules + manifest)
+        run: |
+          bash docker/base/package-app.sh "${{ steps.ver.outputs.version }}" "${{ steps.resolve.outputs.new_base_version }}" build
+          echo "---- manifest ----"; cat build/app/backend/manifest.json
+
+      - name: 上传 app 包构件
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-bundle
+          path: build/app
+
+      - name: 上传 lib 构件 (供 base 镜像构建)
+        uses: actions/upload-artifact@v4
+        with:
+          name: lib-bundle
+          path: build/lib
+
+      - name: 依赖变化 -> 更新基准清单并提交回 main
+        if: steps.diff.outputs.changed == 'True' && github.event_name == 'release'
+        run: |
+          python3 docker/base/manifest.py make build/lib "${{ steps.ver.outputs.version }}" > docker/base/base-manifest.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          git add docker/base/base-manifest.json
+          git commit -m "chore(base): publish base manifest v${{ steps.ver.outputs.version }} (deps changed)" || exit 0
+          git push origin main
+
+  build-images:
+    needs: build-app
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         platform: [amd64, arm64]
-    outputs:
-      version: ${{ steps.ver.outputs.version }}
-      is_dev: ${{ steps.ver.outputs.is_dev }}
-      upload_url: ${{ steps.ver.outputs.upload_url }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 计算并校验三段式版本号
-        id: ver
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # 从 release 事件获取 tag 名
-          TAG="${{ github.event.release.tag_name }}"
-          v="${TAG#v}"   # 去掉 v 前缀
-
-          # 校验三段式 x.y.z 或 x.y.z-dev
-          if ! echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-dev(\.[0-9]+)?)?$'; then
-            echo "::error::版本号必须是三段式 x.y.z 或 x.y.z-dev, 当前 tag: $TAG"
-            exit 1
-          fi
-
-          # dev 尾缀判定
-          if echo "$v" | grep -qE -- '-dev'; then
-            is_dev="true"
-          else
-            is_dev="false"
-          fi
-
-          echo "version=${v}" >> "$GITHUB_OUTPUT"
-          echo "is_dev=${is_dev}" >> "$GITHUB_OUTPUT"
-          echo "upload_url=${{ github.event.release.upload_url }}" >> "$GITHUB_OUTPUT"
-          echo "本次构建版本: ${v} (dev=${is_dev})"
-
-      - name: 安装 QEMU (arm64 跨平台构建)
+      - name: 安装 QEMU (arm64 跨平台)
         if: matrix.platform == 'arm64'
         uses: docker/setup-qemu-action@v3
 
       - name: 安装 Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 构建应用镜像 (版本号 + latest, 注入 APP_VERSION)
-        uses: docker/build-push-action@v6
+      - name: 下载 lib 构件
+        uses: actions/download-artifact@v4
         with:
-          context: .
-          file: docker/app/Dockerfile
-          platforms: linux/${{ matrix.platform }}
-          tags: |
-            victor-app:${{ steps.ver.outputs.version }}
-            victor-app:latest
-          build-args: |
-            APP_VERSION=${{ steps.ver.outputs.version }}
-          load: true
-          cache-from: type=gha,scope=app-${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=app-${{ matrix.platform }}
+          name: lib-bundle
+          path: build/lib
 
-      - name: 构建数据库镜像 (版本号 + latest)
-        uses: docker/build-push-action@v6
+      - name: 准备变量
+        id: vars
+        run: |
+          if [ "${{ matrix.platform }}" = "amd64" ]; then echo "arch=x86_64" >> "$GITHUB_OUTPUT"; else echo "arch=arm64" >> "$GITHUB_OUTPUT"; fi
+
+      - name: 构建 base 镜像 (仅依赖变化时)
+        if: needs.build-app.outputs.changed == 'True'
+        run: |
+          VER="${{ needs.build-app.outputs.version }}"
+          mkdir -p ctx
+          cp -r build/lib ctx/lib
+          cp docker/base/nginx.conf docker/base/entrypoint.sh ctx/
+          docker buildx build --platform linux/${{ matrix.platform }} \
+            -f docker/base/Dockerfile.runtime \
+            --build-arg APP_VERSION="${VER}" \
+            -t victor-base:${VER} --load ctx/
+          mkdir -p images
+          docker save victor-base:${VER} -o images/victor-base-${VER}-${{ steps.vars.outputs.arch }}.tar
+
+      - name: 构建 db 镜像
+        run: |
+          VER="${{ needs.build-app.outputs.version }}"
+          docker buildx build --platform linux/${{ matrix.platform }} \
+            -f docker/db/Dockerfile -t victor-db:${VER} --load .
+          mkdir -p images
+          docker save victor-db:${VER} -o images/victor-db-${VER}-${{ steps.vars.outputs.arch }}.tar
+
+      - name: 上传镜像构件
+        uses: actions/upload-artifact@v4
         with:
-          context: .
-          file: docker/db/Dockerfile
-          platforms: linux/${{ matrix.platform }}
-          tags: |
-            victor-db:${{ steps.ver.outputs.version }}
-            victor-db:latest
-          load: true
-          cache-from: type=gha,scope=db-${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=db-${{ matrix.platform }}
+          name: images-${{ matrix.platform }}
+          path: images/*.tar
+
+  assemble:
+    needs: [build-app, build-images]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载 app 包
+        uses: actions/download-artifact@v4
+        with:
+          name: app-bundle
+          path: staging/app
+
+      - name: 下载 amd64 镜像
+        uses: actions/download-artifact@v4
+        with:
+          name: images-amd64
+          path: staging/images-amd64
+
+      - name: 下载 arm64 镜像
+        uses: actions/download-artifact@v4
+        with:
+          name: images-arm64
+          path: staging/images-arm64
 
       - name: 组装离线分发包
         run: |
           set -e
-          PLATFORM="${{ matrix.platform }}"
-          VERSION="${{ steps.ver.outputs.version }}"
-          ROOT="bundle/victor"
-          mkdir -p "$ROOT/images"
+          VER="${{ needs.build-app.outputs.version }}"
+          make_bundle() {
+            arch="$1"; imgdir="$2"
+            ROOT="bundle/victor"
+            rm -rf "$ROOT"
+            mkdir -p "$ROOT/images"
+            cp -r staging/app "$ROOT/app"
+            cp "$imgdir"/*.tar "$ROOT/images/" 2>/dev/null || true
+            cp docker/docker-compose.yml "$ROOT/docker-compose.yml"
+            cp docker/deploy.sh        "$ROOT/deploy.sh"
+            cp docker/deploy.bat       "$ROOT/deploy.bat"
+            cp docker/db/upgrade-db.sh "$ROOT/upgrade-db.sh"
+            cp docker/db/upgrade-db.bat "$ROOT/upgrade-db.bat"
+            cp docker/.env.template    "$ROOT/.env"
+            cp docker/DEPLOY.md        "$ROOT/README.md"
+            chmod +x "$ROOT/deploy.sh" "$ROOT/upgrade-db.sh"
+            (cd bundle && zip -r "victor-${VER}-${arch}.zip" victor)
+          }
+          make_bundle x86_64 staging/images-amd64
+          make_bundle arm64   staging/images-arm64
 
-          docker save \
-            victor-app:${VERSION} victor-app:latest \
-            victor-db:${VERSION} victor-db:latest \
-            -o "$ROOT/images/victor-images.tar"
-
-          cp docker/docker-compose.yml "$ROOT/docker-compose.yml"
-          cp docker/deploy.sh        "$ROOT/deploy.sh"
-          cp docker/deploy.bat       "$ROOT/deploy.bat"
-          cp docker/.env.template    "$ROOT/.env"
-          cp docker/DEPLOY.md        "$ROOT/README.md"
-          chmod +x "$ROOT/deploy.sh"
-
-          if [ "$PLATFORM" = "amd64" ]; then ARCH="x86_64"; else ARCH="arm64"; fi
-          (cd bundle && zip -r "victor-${VERSION}-${ARCH}.zip" victor)
-
-      - name: 上传构件 (供 release job 汇总)
+      - name: 上传分发包构件
         uses: actions/upload-artifact@v4
         with:
-          name: victor-bundle-${{ matrix.platform }}
+          name: bundles
           path: bundle/*.zip
           retention-days: 14
 
   release:
-    needs: build
+    needs: assemble
     runs-on: ubuntu-latest
-    # 仅正式版 (非 dev) 才把产物挂到 Release
-    if: needs.build.outputs.is_dev != 'true'
+    if: needs.build-app.outputs.is_dev != 'true' && github.event_name == 'release'
     steps:
-      - name: 下载构件
+      - name: 下载分发包
         uses: actions/download-artifact@v4
         with:
+          name: bundles
           path: bundles
-          merge-multiple: true
-          pattern: victor-bundle-*
 
       - name: 上传产物到 Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.build.outputs.version }}
+          tag_name: v${{ needs.build-app.outputs.version }}
           files: bundles/*.zip
