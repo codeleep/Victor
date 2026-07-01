@@ -1,0 +1,8 @@
+{
+  "baseVersion": "",
+  "deps": [],
+  "depsCount": 0,
+  "depsHash": "",
+  "generatedAt": "",
+  "note": "Initial state. baseVersion empty means no base image published yet; the first release will build victor-base:<appVersion> and this file will be updated and committed back by CI."
+}

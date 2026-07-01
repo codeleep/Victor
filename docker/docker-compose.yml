@@ -1,20 +1,29 @@
 # Victor 编排文件 (开发与离线部署共用)
 #
-# 离线部署 (镜像已 docker load 载入, compose 不会重新构建):
-#   先编辑同目录 .env 修改 DB_PASSWORD / JWT_SECRET, 然后
-#   docker compose up -d
+# 架构:
+#   victor-app    = victor-base 镜像 (JRE+nginx+第三方lib, 固定)
+#                   项目 modules 与前端 dist 通过 bind mount 挂入, 不进镜像
+#   victor-postgres = victor-db 镜像 (pgvector + 建表/初始数据)
 #
-# 本地开发 (镜像尚未构建, 加 --build 触发从源码构建):
-#   docker compose up -d --build
+# 镜像版本由 deploy 脚本从 app/backend/manifest.json 读取后注入环境变量:
+#   VICTOR_BASE_VERSION  -> victor-base:<requiresBase>
+#   VICTOR_APP_VERSION   -> victor-db:<appVersion>
+#
+# 离线部署 (镜像已 docker load 载入): 先编辑 .env, 再 deploy 脚本启动
+# 本地开发全栈验证:
+#   bash docker/base/package-app.sh dev dev docker   # 产物输出到 docker/app
+#   docker compose up -d --build                      # 构建 base/db 镜像并挂载 docker/app
 name: victor
 
 services:
   victor-app:
-    image: victor-app:latest
+    image: victor-base:${VICTOR_BASE_VERSION:-dev}
     container_name: victor-app
     build:
       context: ..
-      dockerfile: docker/app/Dockerfile.runtime
+      dockerfile: docker/base/Dockerfile
+      args:
+        APP_VERSION: ${VICTOR_BASE_VERSION:-dev}
     environment:
       DB_HOST: victor-postgres
       DB_PORT: 5432
@@ -23,10 +32,18 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       JWT_SECRET: ${JWT_SECRET:-victor-ai-default-jwt-secret-key-must-be-at-least-256-bits-long}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-86400000}
-      SPRING_PROFILES_ACTIVE: default
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
     ports:
       - "${APP_PORT:-80}:80"
     volumes:
+      # 前端静态资源 (挂载, 改前端只换这里)
+      - ./app/frontend:/usr/share/nginx/html:ro
+      # 后端业务模块 jar (挂载, 改业务只换这里)
+      - ./app/backend/modules:/app/backend/modules:ro
+      # 可选配置覆盖目录
+      - ./app/backend/config:/app/backend/config:ro
+      # 应用清单 (appVersion + requiresBase, 启动时校验)
+      - ./app/backend/manifest.json:/app/backend/manifest.json:ro
       - victor-uploads:/root/victor/uploads
     depends_on:
       victor-postgres:
@@ -40,7 +57,7 @@ services:
     restart: unless-stopped
 
   victor-postgres:
-    image: victor-db:latest
+    image: victor-db:${VICTOR_APP_VERSION:-dev}
     container_name: victor-postgres
     build:
       context: ..

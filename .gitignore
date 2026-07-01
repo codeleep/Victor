@@ -1,4 +1,4 @@
-﻿# IDE
+# IDE
 .idea/
 *.iml
 .vscode/
@@ -34,3 +34,9 @@ frontend/vite.config.d.ts
 
 # Logs directory
 logs/
+
+# Build / packaging output (CI 与本地打包产物)
+build/
+.build-stage/
+base-build.log
+LOG_PATH_IS_UNDEFINED/

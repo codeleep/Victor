@@ -1,0 +1,34 @@
+# =============================================================================
+# Victor base image - runtime-only Dockerfile (CI 用)。
+#
+# 与 Dockerfile 的运行层完全一致, 但 lib/ 由 CI 预先构建好从构建上下文 COPY,
+# 避免在镜像构建里重复跑 maven (lib 是纯 Java, 跨架构通用)。
+#
+# 构建上下文须包含: lib/  nginx.conf  entrypoint.sh
+#   CI 示例:
+#     mkdir ctx && cp -r build/lib ctx/lib \
+#       && cp docker/base/nginx.conf docker/base/entrypoint.sh ctx/ \
+#       && docker buildx build -f docker/base/Dockerfile.runtime \
+#            --build-arg APP_VERSION=$VER -t victor-base:$VER ctx/
+#
+# 本地开发一键构建请用 docker/base/Dockerfile (自包含多阶段)。
+# =============================================================================
+ARG APP_VERSION=dev
+FROM eclipse-temurin:21-jre-alpine
+ARG APP_VERSION=dev
+
+RUN apk add --no-cache nginx
+
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY entrypoint.sh /app/entrypoint.sh
+COPY lib /app/lib
+
+RUN chmod +x /app/entrypoint.sh \
+ && printf '{"baseVersion":"%s"}\n' "$APP_VERSION" > /app/base-manifest.json \
+ && mkdir -p /app/backend/modules /app/backend/config /root/victor/uploads
+
+WORKDIR /app
+
+EXPOSE 80
+
+ENTRYPOINT ["/app/entrypoint.sh"]
