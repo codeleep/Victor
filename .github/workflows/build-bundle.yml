@@ -210,29 +210,50 @@ jobs:
           name: images-arm64
           path: staging/images-arm64
 
-      - name: 组装离线分发包
+      - name: 组装离线分发包 (app 包 + base 包分离)
+        env:
+          CHANGED: ${{ needs.build-app.outputs.changed }}
         run: |
           set -e
           VER="${{ needs.build-app.outputs.version }}"
-          make_bundle() {
-            arch="$1"; imgdir="$2"
-            ROOT="bundle/victor"
-            rm -rf "$ROOT"
-            mkdir -p "$ROOT/images"
-            cp -r staging/app "$ROOT/app"
-            cp "$imgdir"/*.tar "$ROOT/images/" 2>/dev/null || true
-            cp docker/docker-compose.yml "$ROOT/docker-compose.yml"
-            cp docker/deploy.sh        "$ROOT/deploy.sh"
-            cp docker/deploy.bat       "$ROOT/deploy.bat"
-            cp docker/db/upgrade-db.sh "$ROOT/upgrade-db.sh"
-            cp docker/db/upgrade-db.bat "$ROOT/upgrade-db.bat"
-            cp docker/.env.template    "$ROOT/.env"
-            cp docker/DEPLOY.md        "$ROOT/README.md"
-            chmod +x "$ROOT/deploy.sh" "$ROOT/upgrade-db.sh"
-            (cd bundle && zip -r "victor-${VER}-${arch}.zip" victor)
+
+          # 公共文件 (compose / 脚本 / 文档)
+          copy_common() {
+            local root="$1"
+            cp docker/docker-compose.yml "$root/docker-compose.yml"
+            cp docker/deploy.sh          "$root/deploy.sh"
+            cp docker/deploy.bat         "$root/deploy.bat"
+            cp docker/db/upgrade-db.sh   "$root/upgrade-db.sh"
+            cp docker/db/upgrade-db.bat  "$root/upgrade-db.bat"
+            cp docker/.env.template      "$root/.env"
+            cp docker/DEPLOY.md          "$root/README.md"
+            chmod +x "$root/deploy.sh" "$root/upgrade-db.sh"
           }
-          make_bundle x86_64 staging/images-amd64
-          make_bundle arm64   staging/images-arm64
+
+          for arch in x86_64 arm64; do
+            imgdir="staging/images-$([ "$arch" = x86_64 ] && echo amd64 || echo arm64)"
+
+            # ---- app 包: 每次发版都出, 含 app 目录 + db 镜像 (体积小) ----
+            APPROOT="bundle/victor-app"
+            rm -rf "$APPROOT"
+            mkdir -p "$APPROOT/images"
+            cp -r staging/app "$APPROOT/app"
+            cp "$imgdir"/victor-db-*.tar "$APPROOT/images/" 2>/dev/null || true
+            copy_common "$APPROOT"
+            (cd bundle && zip -r "victor-app-${VER}-${arch}.zip" victor-app)
+
+            # ---- base 包: 仅依赖变化时才出, 含 base 镜像 (体积大) ----
+            if [ "$CHANGED" = "True" ]; then
+              BASEROOT="bundle/victor-base"
+              rm -rf "$BASEROOT"
+              mkdir -p "$BASEROOT/images"
+              cp "$imgdir"/victor-base-*.tar "$BASEROOT/images/" 2>/dev/null || true
+              printf '# 基础镜像包 v%s\n# 解压后执行: docker load -i images/victor-base-*.tar\n# 该 base 镜像供 victor-app:%s 复用\n' "$VER" "$VER" > "$BASEROOT/README.md"
+              (cd bundle && zip -r "victor-base-${VER}-${arch}.zip" victor-base)
+              rm -rf "$BASEROOT"
+            fi
+            rm -rf "$APPROOT"
+          done
 
       - name: 上传分发包构件
         uses: actions/upload-artifact@v4
